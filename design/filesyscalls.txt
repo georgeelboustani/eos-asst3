@@ -1,0 +1,64 @@
+Design notes for file system calls (part of the system call solution set)
+-------------------------------------------------------------------------
+
+This part of the solution set covers the following:
+
+   - File system calls: open, read, write, lseek, close, dup2
+   - Current directory calls: chdir, __getcwd
+
+
+   The system calls are actually called from arch/mips/mips/syscall.c.
+Pointer arguments are cast to userptr_t in order to use the compiler
+to help prevent accidentally dereferencing user-supplied pointers
+without calling copyin/copyout/copyinstr/copyoutstr properly.
+   The in-kernel prototypes for the system call functions are defined
+in include/syscall.h. They use the same error reporting/return value
+handling as the rest of the kernel: the return value of the function
+is an error code (0 for success) and any additional integer return
+value to be returned from the system call (such as with read or write)
+is handed back as an additional pointer argument.
+
+   The actual file syscall implementations live in the new file
+userprog/file_syscalls.c.
+
+
+open
+----
+   sys_open copies in the supplied pathname and calls file_open to do
+the work.
+
+read
+----
+   sys_read translates the file descriptor number to a file handle
+object, makes a uio record, then calls VOP_READ and updates the
+current seek position. The file is locked while this occurs.
+
+write
+-----
+   sys_write is the same as sys_read except that it writes.
+
+lseek
+-----
+   sys_lseek translates the file descriptor number to a file handle
+object, computes the new file offset based on the arguments, calls
+VOP_TRYSEEK to make sure the seek is legal, and updates the current
+seek position with the new offset. The file handle object is locked
+while all this happens (which is important).
+
+close
+-----
+   sys_close does nothing besides call file_close().
+
+dup2
+----
+   sys_dup2 does nothing besides call filetable_dup2file().
+
+
+chdir
+-----
+   sys_chdir copies in the pathname and calls vfs_chdir.
+
+__getcwd
+--------
+   sys___getcwd sets up a uio, then calls vfs_getcwd.
+

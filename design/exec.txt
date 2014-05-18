@@ -1,0 +1,133 @@
+Design notes for the exec system call (part of the system call solution set)
+----------------------------------------------------------------------------
+
+This part of the solution set covers the following:
+
+   - the execv system call
+
+execv
+-----
+
+   sys_execv lives in userprog/runprogram.c along with a modified
+version of the old runprogram(). These functions share a good deal of
+their code.
+
+   The interesting part of execv is the argument handling. The
+arguments may be large. We allow all the argument strings taken
+together to be as much as 32768 bytes (ARG_MAX) and also allow up to
+1024 (NARG_MAX) argument pointers, which potentially uses another 4096
+bytes. Many real systems have even larger limits (256k, 512k) because
+of the way wildcards work in Unix: when you run a command with `*' in
+a directory that has a lot of files, the *shell* lists the directory
+and converts the command you typed to one that lists every file by
+name. So if you have a big directory with lots of files with long
+names, it's easy to use huge amounts of space.
+
+   The difficulty is that you can't tell how much space you actually
+need without inspecting the strings you're going to be copying in, but
+you can't inspect the strings without copying them in (or adding to
+the copyin/copyout API, but that's painful because those functions
+often have to be written in assembler.)
+
+   So we just plow ahead and allocate ARG_MAX bytes for strings and
+NARG_MAX pointers. Because this is a lot of memory relative to how
+much we have, and because it has to be kernel memory, allocating it
+poses a substantial drain on the system. So we only allow one process
+to be in exec at once.
+
+   Because of the way the MIPS memory model works, if the string space
+is allocated in ordinary kernel memory, it has to be physically
+contiguous (8 contiguous pages). This is likely to pose a problem, as
+contiguous chunks of pages become hard to find once the system has
+been up for a while. So it may be to your advantage (if you have time)
+while working on assignment 3 to arrange to allocate this block in the
+MIPS kernel paged segment (kseg2). This would also make it possible to
+only materialize memory for it on an as-needed basis.
+
+   We define a structure, struct argvdata, that holds the stuff
+necessary to support an argv transfer, and create one instance as a
+static variable. This requires initialization, so execv_bootstrap() is
+called during the boot sequence. For tidiness, the items involved are
+released in execv_shutdown(). The argvdata structure has a lock, which
+we use to guarantee only one process is doing execv at once.
+
+copyin_args
+-----------
+   The function copyin_args copies an argv vector from a supplied user
+argv pointer into a struct argvdata. It works like this: it loops
+copying in one pointer from the userspace argv vector at a time (until
+it gets a NULL, at which point it stops.) This pointer is itself a
+user pointer, so it calls copyinstr to fetch the string it points to
+into the argv string buffer.
+
+   Now, the string buffer is used incrementally. We copy the first
+string into the beginning. Then we update the "bufend" member of
+argvdata to point to the first byte in it past the first string. We
+also update the "bufresid" variable to reflect how much space is left.
+The second string gets copied to where bufend points to, and then so
+forth with the third and further strings, until either we're done or
+we run out of space.
+
+   Each value of "bufend" that we use is a pointer into the argvdata
+buffer. However, we don't store the pointers: we store the offsets
+from the beginning of the argvdata buffer. (These are readily
+converted to pointers, but turn out to be more convenient.)
+
+copyout_args
+------------
+   The function copyout_args copies data from a struct argvdata out to
+a new user process's stack. The stack pointer is passed in via a
+pointer, so it can be updated and passed back. The user-level argv
+pointer is also handed back.
+
+   It works like this: first we copy out the strings. They can be done
+all at once as one large block, because they're contiguous in the
+argvdata buffer. So we make space on the stack to hold the necessary
+length (recall that stacks grow down on almost all architectures) and
+round down further to align to a word boundary. Then we do a big
+copyout.
+
+   Now all we need to do is copy out the pointers in the user's argv[]
+vector. So we make space on the stack (reserving an extra slot for the
+NULL that is supposed to be found at argv[argc]). The user-level
+pointers to the strings are now the base address of the string block
+plus the offsets we saved in the argvdata structure's offsets array.
+So we compute those pointers and copy them out, one at a time. Then we
+copy out a NULL.
+
+   Finally, the user's argv pointer is the address of the first of
+these pointers that we copied out, which is also the current stack
+pointer.
+
+loadexec
+--------
+   The loadexec function is the shared code for execv and runprogram
+that loads an executable. It is essentially the same as the
+corresponding code from the old runprogram(), except that it restores
+the thread's previous address space on error. (Note that because the
+VM system and context switch code looks at curthread->t_addrspace,
+calling as_activate on an address space that is not
+curthread->t_addrspace does not work and cannot easily be made to
+work.)
+
+   The other significant thing it does is destroy the thread's old
+address space once the load is complete. Note that once this happens,
+execv must not fail -- there's nowhere left for it to return an error
+back to.
+
+runprogram
+----------
+   runprogram now calls filetable_init to open stdin, stdout, and
+stderr if they don't exist yet. It also sets up a basic argv for the
+new process. (It does not support argument passing from the menu, but
+could be made to with little difficulty.) It calls copyout_args after
+setting up the new address space.
+
+   Note that if copyout_args fails because of an invalid pointer, it's
+because we messed up, so we panic.
+
+sys_execv
+---------
+   sys_execv is basically the same as runprogram except that it calls
+copyin_args on the argv and copies in the program pathname before
+loading it.

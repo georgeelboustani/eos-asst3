@@ -1,0 +1,78 @@
+File tables and open files
+--------------------------
+
+   Each process has a table of open files. The table, struct
+filetable, is declared in include/file.h, and consists of an array of
+OPEN_MAX pointers to file handle objects. (OPEN_MAX is 64, declared in
+kern/limits.h.) The table objects are not shared among threads and
+contain no synchronization primitives. (This is because we assume
+processes are single-threaded. To add support for multithreaded
+processes, it would be necessary to lock the file table.)
+   The file handle object is struct openfile; it contains a vnode
+pointer, a lock, the file offset (current seek pointer) and reference
+count. (Because these objects are shared on fork(), the lock is
+required.) 
+   The common code for the file table and file handle objects lives in
+the new file syscall/file.c. These functions are:
+
+   file_open: 
+	Does all the work for open(). Calls vfs_open to get a vnode,
+	creates and initializes a file handle object, and calls
+	filetable_placefile to insert it in the current thread's file
+	table.
+
+   file_doclose:
+	Does the work for close(). Locks the file handle and calls
+	vfs_close if the refcount is going to zero. This function is
+	shared between file_close() and filetable_destroy().
+
+   file_close:
+	Gets a file out of the file table and hands off to file_doclose.
+	On error, the file is left open.
+
+   filetable_init:
+	Sets up the file table for the first user-level process,
+	allocating it and opening files (normally the console) on the
+	standard file descriptor numbers.
+
+   filetable_copy:
+	The file-table-side part of fork. Makes a new file table
+	pointing to the same files as the current thread's file table,
+	locking and incrementing the reference count on any files that
+	are open.
+
+   filetable_destroy:
+	Closes everything in the passed-in file table (which may not
+	be the current thread's file table, if for instance something
+	failed in fork) and frees it. We tell file_doclose that we
+	don't want to hear about errors (because there's nothing we
+	can do about them.) This has the disadvantage that if errors
+	occur, VFS will think the file is still open (because we
+	cannot force it to close the file and potentially lose
+	data)... this isn't good but there isn't any clear solution
+	either. 
+
+   filetable_placefile:
+	Inserts a file handle object (struct openfile) in the first
+	unused slot in the current thread's file table, and hand back
+	the file descriptor number.
+
+   filetable_findfile:
+	Look up a file descriptor number in the current thread's file
+	table and hand back the file handle object. Essentially serves
+	to centralize the range and validity checking code.
+
+	If you add multithreaded processes that share file tables, be
+	sure to synchronize this function correctly -- in such an
+	environment it must atomically increment the refcount on the
+	file handle object before returning it to prevent it from
+	disappearing if another thread closes it. (The caller is
+	responsible for decrementing the refcount again.)
+
+   filetable_dup2file:
+	Implements dup2(). If the target file descriptor number
+	references an open file, closes it. Then increments the
+	refcount on the file handle object and causes both file
+	descriptor numbers to refer to it. dup2'ing the same fd to
+	itself always succeeds and does not close the file (the
+	semantics found in BSD Unix.)
