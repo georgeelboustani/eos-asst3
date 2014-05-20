@@ -63,6 +63,11 @@ as_create(void)
 	/*
 	 * Initialize as needed.
 	 */
+	 int i = 0;
+	 while (i < PAGE_TABLE_ONE_SIZE) {
+		as->page_table_one[i] = NULL:
+		i++;
+	}
 
 	return as;
 }
@@ -140,16 +145,46 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable)
 {
-	/*
-	 * Write this.
-	 */
+	size_t npages;
 
-	(void)as;
-	(void)vaddr;
-	(void)sz;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
+	/* Align the region. First, the base... */
+	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
+
+	/* ...and now the length. */
+	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
+
+	npages = sz / PAGE_SIZE;
+
+	int i = 0;
+
+	if (as->page_table_one[npages] == NULL) {
+		as->page_table_one[npages] = kmalloc(sizeof(struct page_table_entry) * PAGE_TABLE_TWO_SIZE);
+		while (i < PAGE_TABLE_TWO_SIZE) {
+			as->page_table_one[npages][i] = NULL:
+			i++;
+		}
+	}
+	i = 0;
+	// TODO - fixing this fucking 64 magic number bullshit
+	while (i < PAGE_TABLE_TWO_SIZE) {
+		if (as->page_table_one[npages][i] != NULL) {
+			struct page_table_entry* pte = kmalloc(sizeof(struct page_table_entry*);
+			pte->as_vbase = vaddr;
+			pte->as_pbase = 0;
+			pte->as_npages = npages;
+			pte->is_dirty = 1;
+			pte->readable = readable;
+			pte->writeable = writeable;
+			pte->executable = executable;
+			as->page_table_one[npages][i] = pte;
+			return 0;
+		}
+		i++;
+	}
+
+	// TODO fix this return
+	kprintf("dumbvm: Warning: too many regions\n");
 	return ENOSYS; /* Unimplemented */
 }
 

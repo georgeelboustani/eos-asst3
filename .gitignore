@@ -1,8 +1,6 @@
 # Object files
 *.o
 *.ko
-*.obj
-*.elf
 
 # Libraries
 *.lib
@@ -18,6 +16,17 @@
 *.exe
 *.out
 *.app
-*.i*86
-*.x86_64
-*.hex
+
+build
+.depend
+defs.mk
+kern/compile/*
+user/testbin/randcall/calls.c
+TAGS
+.tags
+.tags_sorted_by_file
+
+
+# Eclipse
+.cproject
+.project

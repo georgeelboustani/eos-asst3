@@ -38,6 +38,9 @@
 #include <vm.h>
 #include "opt-dumbvm.h"
 
+#define PAGE_TABLE_ONE_SIZE  1024
+#define PAGE_TABLE_TWO_SIZE  1024
+
 struct vnode;
 
 
@@ -47,6 +50,16 @@ struct vnode;
  *
  * You write this.
  */
+
+struct page_table_entry {
+    vaddr_t as_vbase1;
+    paddr_t as_pbase1;
+    size_t as_npages1;
+    int is_dirty;
+    int readable;
+    int writeable;
+    int executable;
+};
 
 struct addrspace {
 #if OPT_DUMBVM
@@ -59,6 +72,7 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
         /* Put stuff here for your VM system */
+        struct page_table_entry* page_table_one[PAGE_TABLE_ONE_SIZE];
 #endif
 };
 
