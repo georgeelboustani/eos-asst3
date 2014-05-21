@@ -65,7 +65,7 @@ as_create(void)
 	 */
 	 int i = 0;
 	 while (i < PAGE_TABLE_ONE_SIZE) {
-		as->page_table_one[i] = NULL:
+		as->page_table_one[i] = NULL;
 		i++;
 	}
 
@@ -157,19 +157,17 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	npages = sz / PAGE_SIZE;
 
 	int i = 0;
-
 	if (as->page_table_one[npages] == NULL) {
 		as->page_table_one[npages] = kmalloc(sizeof(struct page_table_entry) * PAGE_TABLE_TWO_SIZE);
 		while (i < PAGE_TABLE_TWO_SIZE) {
-			as->page_table_one[npages][i] = NULL:
+			as->page_table_one[npages][i] = NULL;
 			i++;
 		}
 	}
 	i = 0;
-	// TODO - fixing this fucking 64 magic number bullshit
 	while (i < PAGE_TABLE_TWO_SIZE) {
-		if (as->page_table_one[npages][i] != NULL) {
-			struct page_table_entry* pte = kmalloc(sizeof(struct page_table_entry*);
+		if (as->page_table_one[npages][i] == NULL) {
+			struct page_table_entry* pte = kmalloc(sizeof(struct page_table_entry*));
 			pte->as_vbase = vaddr;
 			pte->as_pbase = 0;
 			pte->as_npages = npages;

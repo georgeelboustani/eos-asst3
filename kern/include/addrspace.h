@@ -52,9 +52,9 @@ struct vnode;
  */
 
 struct page_table_entry {
-    vaddr_t as_vbase1;
-    paddr_t as_pbase1;
-    size_t as_npages1;
+    vaddr_t as_vbase;
+    paddr_t as_pbase;
+    size_t as_npages;
     int is_dirty;
     int readable;
     int writeable;
@@ -72,7 +72,7 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
         /* Put stuff here for your VM system */
-        struct page_table_entry* page_table_one[PAGE_TABLE_ONE_SIZE];
+        struct page_table_entry **page_table_one[PAGE_TABLE_ONE_SIZE];
 #endif
 };
 
