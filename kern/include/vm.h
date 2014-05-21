@@ -35,7 +35,7 @@
  *
  * You'll probably want to add stuff here.
  */
-
+void initialize_frame_table(void);
 
 #include <machine/vm.h>
 

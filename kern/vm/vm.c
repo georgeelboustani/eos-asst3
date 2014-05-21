@@ -7,15 +7,16 @@
 #include <machine/tlb.h>
 
 /* Place your page table functions here */
-
+// probably want page walk here.
 
 
 
 void vm_bootstrap(void)
 {
-    /* Initialise VM sub-system.  You probably want to initialise your 
-       frame table here as well.
-    */
+	/* Initialise VM sub-system.  You probably want to initialise your
+	frame table here as well.
+	*/
+	initialize_frame_table();
 }
 
 int
