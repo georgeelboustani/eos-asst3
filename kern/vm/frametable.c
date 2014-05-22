@@ -5,6 +5,8 @@
 #include <addrspace.h>
 #include <vm.h>
 
+#define SET 1
+#define UNSET 0
 /* Place your frametable data-structures here 
  * You probably also want to write a frametable initialisation
  * function and call it from vm_bootstrap
@@ -21,7 +23,7 @@ struct frame_table_entry {
 };
 
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
-struct frame_table_entry* frame_table = 0;
+struct frame_table_entry* frame_table = UNSET;
 
 void initialize_frame_table(void) {
 	paddr_t paddr_low;
@@ -38,8 +40,16 @@ void initialize_frame_table(void) {
 	int i = 0;
 	for (i = 0; i < frame_table_pages; i++) {
 		frame_table[i].as = NULL;
-		frame_table[i].free = 0;
-		frame_table[i].fixed = 1;
+		frame_table[i].free = UNSET;
+		frame_table[i].fixed = SET;
+		frame_table[i].vaddr = PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
+	}
+
+	// Initialise the rest of the frame table, preferrably assign state values
+	for (i = frame_table_pages; i < size_of_frame_table; i++) {
+		frame_table[i].as = NULL;
+		frame_table[i].free = SET;
+		frame_table[i].fixed = UNSET;
 		frame_table[i].vaddr = PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
 	}
 }
@@ -54,28 +64,48 @@ void initialize_frame_table(void) {
 
 vaddr_t alloc_kpages(int npages)
 {
-	/*
-	 * IMPLEMENT ME.  You should replace this code with a proper implementation.
-	 */
+	vaddr_t firstaddr;
 
-	paddr_t addr;
-
-	if (frame_table == 0) {
-		spinlock_acquire(&stealmem_lock);
-		addr = ram_stealmem(npages);
-		spinlock_release(&stealmem_lock);
-	} else {
-		// TODO: malloc info properly.
+	if (npages > 1) {
+		panic("Cannot allocate more than a single page of memory!\n");
 	}
 
-	if(addr == 0)
+	if (frame_table == UNSET) {
+		spinlock_acquire(&stealmem_lock);
+		firstaddr = ram_stealmem(npages);
+		spinlock_release(&stealmem_lock);
+	} else {
+		int i = 0;
+		while (frame_table[i].free != SET) {
+			i++;
+		}
+		// Need to find a place to set as, only needed if reserving space
+		// for a user program.
+//		frame_table[i].as = curthread->t_proc->p_addrspace;
+		frame_table[i].free = UNSET;
+		frame_table[i].fixed = UNSET;
+		firstaddr = frame_table[i].vaddr;
+	}
+
+	if(firstaddr == 0)
 		return 0;
 
-	return PADDR_TO_KVADDR(addr);
+	return firstaddr;
 }
 
 void free_kpages(vaddr_t addr)
 {
-	(void) addr;
+	// Only good if this page is not mapped to user address space,
+	// if as != null we need to unmap the as and shootdown the TLB entry.
+	int freed = UNSET;
+	int i = 0;
+	while (!freed) {
+		if (frame_table[i].vaddr == addr && frame_table[i].as == NULL) {
+			frame_table[i].free = SET;
+			frame_table[i].fixed = UNSET;
+			freed = SET;
+		}
+		i++;
+	}
 }
 
