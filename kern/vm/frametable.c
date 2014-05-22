@@ -42,15 +42,15 @@ void initialize_frame_table(void) {
 		frame_table[i].as = NULL;
 		frame_table[i].free = UNSET;
 		frame_table[i].fixed = SET;
-		frame_table[i].vaddr = PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
+		frame_table[i].vaddr = size_of_frame_table + PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
 	}
 
 	// Initialise the rest of the frame table, preferrably assign state values
-	for (i = frame_table_pages; i < size_of_frame_table; i++) {
+	for (i = frame_table_pages; i < total_num_pages; i++) {
 		frame_table[i].as = NULL;
 		frame_table[i].free = SET;
 		frame_table[i].fixed = UNSET;
-		frame_table[i].vaddr = PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
+		frame_table[i].vaddr = size_of_frame_table + PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
 	}
 }
 
@@ -66,15 +66,15 @@ vaddr_t alloc_kpages(int npages)
 {
 	vaddr_t firstaddr;
 
-	if (npages > 1) {
-		panic("Cannot allocate more than a single page of memory!\n");
-	}
-
 	if (frame_table == UNSET) {
 		spinlock_acquire(&stealmem_lock);
-		firstaddr = ram_stealmem(npages);
+		firstaddr = PADDR_TO_KVADDR(ram_stealmem(npages));
 		spinlock_release(&stealmem_lock);
 	} else {
+		if (npages > 1) {
+			panic("Cannot allocate more than a single page of memory!\n");
+		}
+		
 		int i = 0;
 		while (frame_table[i].free != SET) {
 			i++;
@@ -87,8 +87,12 @@ vaddr_t alloc_kpages(int npages)
 		firstaddr = frame_table[i].vaddr;
 	}
 
-	if(firstaddr == 0)
-		return 0;
+	bzero((void *)firstaddr, PAGE_SIZE);
+
+
+	if (firstaddr == 0) {
+		return NULL;
+	}
 
 	return firstaddr;
 }
