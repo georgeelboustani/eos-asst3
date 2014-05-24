@@ -30,10 +30,11 @@ void initialize_frame_table(void) {
 	paddr_t paddr_high;
 	ram_getsize(&paddr_low, &paddr_high);
 
+	frame_table = (struct frame_table_entry*) PADDR_TO_KVADDR(paddr_low);
+
 	int total_num_pages = paddr_high / PAGE_SIZE;
 	int size_of_frame_table = total_num_pages * sizeof(struct frame_table_entry);
-	paddr_t location = paddr_high - (size_of_frame_table);
-	frame_table = (struct frame_table_entry*) PADDR_TO_KVADDR(location);
+	paddr_t free_addr = paddr_low + size_of_frame_table;
 
 	// Number of pages required to accommodate the entire frame table:
 	int frame_table_pages = size_of_frame_table / PAGE_SIZE;
@@ -42,7 +43,7 @@ void initialize_frame_table(void) {
 		frame_table[i].as = NULL;
 		frame_table[i].free = UNSET;
 		frame_table[i].fixed = SET;
-		frame_table[i].vaddr = size_of_frame_table + PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
+		frame_table[i].vaddr = PADDR_TO_KVADDR(free_addr) + i * PAGE_SIZE;
 	}
 
 	// Initialise the rest of the frame table, preferrably assign state values
@@ -50,7 +51,7 @@ void initialize_frame_table(void) {
 		frame_table[i].as = NULL;
 		frame_table[i].free = SET;
 		frame_table[i].fixed = UNSET;
-		frame_table[i].vaddr = size_of_frame_table + PADDR_TO_KVADDR(location) + i * PAGE_SIZE;
+		frame_table[i].vaddr = PADDR_TO_KVADDR(free_addr) + i * PAGE_SIZE;
 	}
 }
 
@@ -72,14 +73,15 @@ vaddr_t alloc_kpages(int npages)
 		spinlock_release(&stealmem_lock);
 	} else {
 		if (npages > 1) {
-			panic("Cannot allocate more than a single page of memory!\n");
+			return 0;
+			//panic("Cannot allocate more than a single page of memory!\n");
 		}
 		
 		int i = 0;
 		while (frame_table[i].free != SET) {
 			i++;
 		}
-		// Need to find a place to set as, only needed if reserving space
+		// TODO - Need to find a place to set as, only needed if reserving space
 		// for a user program.
 //		frame_table[i].as = curthread->t_proc->p_addrspace;
 		frame_table[i].free = UNSET;
@@ -88,11 +90,6 @@ vaddr_t alloc_kpages(int npages)
 	}
 
 	bzero((void *)firstaddr, PAGE_SIZE);
-
-
-	if (firstaddr == 0) {
-		return NULL;
-	}
 
 	return firstaddr;
 }
