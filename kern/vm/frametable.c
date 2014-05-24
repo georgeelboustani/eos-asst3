@@ -24,6 +24,7 @@ struct frame_table_entry {
 
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 struct frame_table_entry* frame_table = UNSET;
+paddr_t free_addr;
 
 void initialize_frame_table(void) {
 	paddr_t paddr_low;
@@ -32,26 +33,18 @@ void initialize_frame_table(void) {
 
 	frame_table = (struct frame_table_entry*) PADDR_TO_KVADDR(paddr_low);
 
-	int total_num_pages = paddr_high / PAGE_SIZE;
+	int total_num_pages = (paddr_high - paddr_low) / PAGE_SIZE;
 	int size_of_frame_table = total_num_pages * sizeof(struct frame_table_entry);
-	paddr_t free_addr = paddr_low + size_of_frame_table;
+	free_addr = paddr_low + size_of_frame_table;
 
-	// Number of pages required to accommodate the entire frame table:
-	int frame_table_pages = size_of_frame_table / PAGE_SIZE;
 	int i = 0;
-	for (i = 0; i < frame_table_pages; i++) {
-		frame_table[i].as = NULL;
-		frame_table[i].free = UNSET;
-		frame_table[i].fixed = SET;
-		frame_table[i].vaddr = PADDR_TO_KVADDR(free_addr) + i * PAGE_SIZE;
-	}
-
-	// Initialise the rest of the frame table, preferrably assign state values
-	for (i = frame_table_pages; i < total_num_pages; i++) {
+	// Initialise the frame table, preferrably assign state values
+	for (i = 0; i < total_num_pages; i++) {
 		frame_table[i].as = NULL;
 		frame_table[i].free = SET;
 		frame_table[i].fixed = UNSET;
-		frame_table[i].vaddr = PADDR_TO_KVADDR(free_addr) + i * PAGE_SIZE;
+		// This will be mapped in vm_fault to the physical address of the page
+		frame_table[i].vaddr = i * PAGE_SIZE;
 	}
 }
 
