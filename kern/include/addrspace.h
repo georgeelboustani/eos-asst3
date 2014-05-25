@@ -52,13 +52,21 @@ struct vnode;
  */
 
 struct page_table_entry {
-    vaddr_t as_vbase;
-    paddr_t as_pbase;
-    size_t as_npages;
-    int is_dirty;
-    int readable;
-    int writeable;
-    int executable;
+	paddr_t pbase;
+	int is_dirty;
+	int is_valid;
+	int index;
+	int offset;
+	struct page_table_entry* next;
+};
+
+struct region {
+	vaddr_t vbase;
+	size_t npages;
+	int readable;
+	int writeable;
+	int executable;
+	struct region* next;
 };
 
 struct addrspace {
@@ -72,9 +80,20 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
         /* Put stuff here for your VM system */
-        struct page_table_entry **page_table_one[PAGE_TABLE_ONE_SIZE];
+        struct page_table_entry *page_directory[PAGE_TABLE_ONE_SIZE];
+        struct region* first_region;
 #endif
 };
+
+/*
+ * Page table helpers:
+ */
+struct page_table_entry* create_page_table(paddr_t pbase, int is_dirty, int is_valid, int index, int offset);
+struct page_table_entry* add_page_table_entry(struct page_table_entry* head, struct page_table_entry* new_page_table_entry);
+struct page_table_entry* deep_copy_page_table(struct page_table_entry* old);
+struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head, int index);
+struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int create_flag);
+
 
 /*
  * Functions in addrspace.c:

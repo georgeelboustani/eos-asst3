@@ -8,11 +8,6 @@
 #include <proc.h>
 #include <current.h>
 
-/* Place your page table functions here */
-// probably want page walk here.
-
-
-
 void vm_bootstrap(void)
 {
 	/* Initialise VM sub-system.  You probably want to initialise your
@@ -24,110 +19,108 @@ void vm_bootstrap(void)
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
-    // _______________________________________________
-    (void) faulttype;
-    (void) faultaddress;
+	vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
+	paddr_t paddr;
+	int i;
+	uint32_t ehi, elo;
+	struct addrspace *as;
+	int spl;
 
-    panic("vm_fault hasn't been written yet\n");
 
-    return EFAULT;
-    // _______________________________________________
-    //vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
-    //paddr_t paddr;
-    //int i;
-    //uint32_t ehi, elo;
-    // struct addrspace *as;
-    //int spl;
+	if (curproc == NULL) {
+		 /*
+		  * No process. This is probably a kernel fault early
+		  * in boot. Return EFAULT so as to panic instead of
+		  * getting into an infinite faulting loop.
+		  */
+		 return EFAULT;
+	}
 
-    // faultaddress &= PAGE_FRAME;
+	as = proc_getas();
+	if (as == NULL) {
+		 /*
+		  * No address space set up. This is probably also a
+		  * kernel fault early in boot.
+		  */
+		return EFAULT;
+	}
 
-    // DEBUG(DB_VM, "dumbvm: fault: 0x%x\n", faultaddress);
+	faultaddress &= PAGE_FRAME;
 
-    // switch (faulttype) {
-    //     case VM_FAULT_READONLY:
-    //     /* We always create pages read-write, so we can't get this */
-    //     panic("dumbvm: got VM_FAULT_READONLY\n");
-    //     case VM_FAULT_READ:
-    //     case VM_FAULT_WRITE:
-    //     break;
-    //     default:
-    //     return EINVAL;
-    // }
+	DEBUG(DB_VM, "vm: fault: 0x%x\n", faultaddress);
 
-    // if (curproc == NULL) {
-    //     /*
-    //      * No process. This is probably a kernel fault early
-    //      * in boot. Return EFAULT so as to panic instead of
-    //      * getting into an infinite faulting loop.
-    //      */
-    //     return EFAULT;
-    // }
+	struct region* region = retrieve_region(as, faultaddress);
+	if (region == NULL) {
+		panic("Cannot retrieve associated region\n");
+	}
 
-    // as = proc_getas();
-    // if (as == NULL) {
-    //     /*
-    //      * No address space set up. This is probably also a
-    //      * kernel fault early in boot.
-    //      */
-    //     return EFAULT;
-    // }
+	switch (faulttype) {
+		case VM_FAULT_READONLY:
+			panic("Write attempted on read section\n");
+			break;
+		case VM_FAULT_READ:
+			// read attempted
+			if (!region->readable) {
+				panic("Attempted to read an unreadable region\n");
+			}
+			break;
+		case VM_FAULT_WRITE:
+			// write attempted
+			if (!region->writeable) {
+				panic("Attempted to write an unwriteable region\n");
+			}
+			break;
+		default:
+			return EINVAL;
+	}
 
-    // /* Assert that the address space has been set up properly. */
-    // KASSERT(as->as_vbase1 != 0);
-    // KASSERT(as->as_pbase1 != 0);
-    // KASSERT(as->as_npages1 != 0);
-    // KASSERT(as->as_vbase2 != 0);
-    // KASSERT(as->as_pbase2 != 0);
-    // KASSERT(as->as_npages2 != 0);
-    // KASSERT(as->as_stackpbase != 0);
-    // KASSERT((as->as_vbase1 & PAGE_FRAME) == as->as_vbase1);
-    // KASSERT((as->as_pbase1 & PAGE_FRAME) == as->as_pbase1);
-    // KASSERT((as->as_vbase2 & PAGE_FRAME) == as->as_vbase2);
-    // KASSERT((as->as_pbase2 & PAGE_FRAME) == as->as_pbase2);
-    // KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
+//     vbase1 = as->as_vbase1;
+//     vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
+//     vbase2 = as->as_vbase2;
+//     vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
+//     stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
+//     stacktop = USERSTACK;
+//
+//     if (faultaddress >= vbase1 && faultaddress < vtop1) {
+//         paddr = (faultaddress - vbase1) + as->as_pbase1;
+//     }
+//     else if (faultaddress >= vbase2 && faultaddress < vtop2) {
+//         paddr = (faultaddress - vbase2) + as->as_pbase2;
+//     }
+//     else if (faultaddress >= stackbase && faultaddress < stacktop) {
+//         paddr = (faultaddress - stackbase) + as->as_stackpbase;
+//     }
+//     else {
+//         return EFAULT;
+//     }
 
-    // vbase1 = as->as_vbase1;
-    // vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
-    // vbase2 = as->as_vbase2;
-    // vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
-    // stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
-    // stacktop = USERSTACK;
+	struct page_table_entry* page = page_walk(faultaddress, as, 1);
+	if (page != NULL) {
+		// We found a page mapped to the vaddr.
+		paddr = (faultaddress - region->vbase) + page->pbase;
+		/* make sure it's page-aligned */
+		KASSERT((paddr & PAGE_FRAME) == paddr);
+	}
 
-    // if (faultaddress >= vbase1 && faultaddress < vtop1) {
-    //     paddr = (faultaddress - vbase1) + as->as_pbase1;
-    // }
-    // else if (faultaddress >= vbase2 && faultaddress < vtop2) {
-    //     paddr = (faultaddress - vbase2) + as->as_pbase2;
-    // }
-    // else if (faultaddress >= stackbase && faultaddress < stacktop) {
-    //     paddr = (faultaddress - stackbase) + as->as_stackpbase;
-    // }
-    // else {
-    //     return EFAULT;
-    // }
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
 
-    // /* make sure it's page-aligned */
-    // KASSERT((paddr & PAGE_FRAME) == paddr);
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_read(&ehi, &elo, i);
+		if (elo & TLBLO_VALID) {
+			continue;
+		}
+		ehi = faultaddress;
+		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
+		tlb_write(ehi, elo, i);
+		splx(spl);
+		return 0;
+	}
 
-    // /* Disable interrupts on this CPU while frobbing the TLB. */
-    // spl = splhigh();
-
-    // for (i=0; i<NUM_TLB; i++) {
-    //     tlb_read(&ehi, &elo, i);
-    //     if (elo & TLBLO_VALID) {
-    //         continue;
-    //     }
-    //     ehi = faultaddress;
-    //     elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-    //     DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
-    //     tlb_write(ehi, elo, i);
-    //     splx(spl);
-    //     return 0;
-    // }
-
-    kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
-    //splx(spl);
-    return EFAULT;
+	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
+	//splx(spl);
+	return EFAULT;
 }
 
 /*
