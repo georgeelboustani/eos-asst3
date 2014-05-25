@@ -80,8 +80,10 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
         /* Put stuff here for your VM system */
-        struct page_table_entry *page_directory[PAGE_TABLE_ONE_SIZE];
+        struct page_table_entry **page_directory;
+        int num_regions;
         struct region* first_region;
+        struct region** readonly_preparation;
 #endif
 };
 
@@ -93,6 +95,7 @@ struct page_table_entry* add_page_table_entry(struct page_table_entry* head, str
 struct page_table_entry* deep_copy_page_table(struct page_table_entry* old);
 struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head, int index);
 struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int create_flag);
+struct region* retrieve_region(struct addrspace* as, vaddr_t faultaddress);
 
 
 /*

@@ -42,6 +42,9 @@
 #define OFFSET_MASK 0x00000fff
 #define FIRST_TABLE_INDEX_MASK 0xffc00000
 #define SECOND_TABLE_INDEX_MASK 0x003ff000
+
+#define USER_STACKPAGES 16
+
 /*
  * Region helper functions:
  */
@@ -102,18 +105,16 @@ void destroy_regions(struct region* region) {
 }
 
 struct region* retrieve_region(struct addrspace* as, vaddr_t faultaddress) {
-	struct region* curr = as->first_region;
-	while (curr != NULL) {
-		if (curr->vbase <= faultaddress &&
-			(faultaddress <= curr->vbase + curr->npages * PAGE_SIZE)) {
-			KASSERT(curr->vbase != 0);
-			KASSERT(curr->npages != 0);
-			KASSERT((curr->vbase & PAGE_FRAME) == curr->vbase);
-//			KASSERT(as->as_stackpbase != 0);
-//			KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
-			return curr;
+	struct region* curr_region = as->first_region;
+	while (curr_region != NULL) {
+		if (faultaddress >= curr_region->vbase &&
+			(faultaddress <= curr_region->vbase + curr_region->npages * PAGE_SIZE)) {
+			KASSERT(curr_region->vbase != 0);
+			KASSERT(curr_region->npages != 0);
+			KASSERT((curr_region->vbase & PAGE_FRAME) == curr_region->vbase);
+			return curr_region;
 		}
-		curr = curr->next;
+		curr_region = curr_region->next;
 	}
 	return NULL;
 }
@@ -199,21 +200,28 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 }
 
 struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int create_flag) {
-	vaddr_t first_index = (vaddr & 0xffc00000) >> 22;
-	vaddr_t second_index = (vaddr & 0x003ff000) >> 12;
+	int first_index = (vaddr & FIRST_TABLE_INDEX_MASK) >> 22;
+	int second_index = (vaddr & SECOND_TABLE_INDEX_MASK) >> 12;
+	size_t offset = vaddr & OFFSET_MASK;
 
-	if (as->page_directory[first_index][second_index] == NULL) {
-		if (create_flag) {
-			// TODO FIX THIS? HOW TO GET PADDR?
-//			struct page_table_entry* new_pte = create_page_table();
-//			return new_pte;
-			return NULL;
-		} else {
-			return NULL;
+	struct page_table_entry* current_table_entry = as->page_directory[first_index];
+	struct page_table_entry* previous_table_entry = NULL;
+	while (current_table_entry != NULL) {
+		if (current_table_entry->index == second_index) {
+			return current_table_entry;
 		}
-	} else {
-		return as->page_directory[first_index][second_index];
+
+		previous_table_entry = current_table_entry;
+		current_table_entry = current_table_entry->next;
 	}
+
+	if (create_flag) {
+		struct page_table_entry* new_pte = create_page_table(getppages(1), 1, 1, second_index, offset);
+		as->page_directory[first_index] = add_page_table_entry(as->page_directory[first_index], new_pte);
+		return new_pte;
+	}
+
+	return NULL;
 }
 
 /*
@@ -235,6 +243,11 @@ as_create(void)
 	if (as == NULL) {
 		return NULL;
 	}
+	struct page_table_entry** page_directory = (struct page_table_entry**)kmalloc(sizeof(struct page_table_entry*) * PAGE_TABLE_ONE_SIZE);
+	if (page_directory == NULL) {
+		return NULL;
+	}
+	as->page_directory = page_directory;
 
 	/*
 	 * Initialize as needed.
@@ -246,6 +259,7 @@ as_create(void)
 	}
 
 	as->first_region = NULL;
+	as->num_regions = 0;
 
 	return as;
 }
@@ -262,10 +276,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	newas->first_region = deep_copy_region(old->first_region);
 
-	//TODO: Deep copy the page table as well.... :(
 	int i = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
-		//newas->page_table_one[i] = deep_copy_page_table(old->page_table_one[i]);
+		// TODO - double check this
+		newas->page_directory[i] = deep_copy_page_table(old->page_directory[i]);
 		i++;
 	}
 
@@ -279,7 +293,8 @@ as_destroy(struct addrspace *as)
 	destroy_regions(as->first_region);
 	int i = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
-		//destroy_page_table(as->page_table_one[i]);
+		// TODO - double check this fucking albert fucking albert
+		//destroy_page_table_entry(as->page_directory[i], i);
 		i++;
 	}
 	kfree(as);
@@ -351,67 +366,52 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
 	struct region* new_region = create_region(vaddr, npages, readable, writeable, executable);
 	add_region(as, new_region);
+	as->num_regions++;
 
 	return 0;
-// TODO: Consider where else this might be needed.. if ever.
-//	int i = 0;
-//	if (as->page_table_one[npages] == NULL) {
-//		as->page_table_one[npages] = kmalloc(sizeof(struct page_table_entry) * PAGE_TABLE_TWO_SIZE);
-//		while (i < PAGE_TABLE_TWO_SIZE) {
-//			as->page_table_one[npages][i] = NULL;
-//			i++;
-//		}
-//	}
-//	i = 0;
-//	while (i < PAGE_TABLE_TWO_SIZE) {
-//		if (as->page_table_one[npages][i] == NULL) {
-//			struct page_table_entry* pte = kmalloc(sizeof(struct page_table_entry*));
-//			pte->as_vbase = vaddr;
-//			pte->as_pbase = 0;
-//			pte->as_npages = npages;
-//			pte->is_dirty = 1;
-//			pte->readable = readable;
-//			pte->writeable = writeable;
-//			pte->executable = executable;
-//			as->page_table_one[npages][i] = pte;
-//			return 0;
-//		}
-//		i++;
-//	}
 }
 
 int
 as_prepare_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
+	as->readonly_preparation = (struct region**)kmalloc(sizeof(struct region*) * as->num_regions);
 
-	(void)as;
+	struct region* current_region = as->first_region;
+	int i = 0;
+	while (current_region != NULL) {
+		if (!current_region->writeable) {
+			current_region->writeable = 1;
+			as->readonly_preparation[i] = current_region;
+		}
+		current_region = current_region->next;
+		i++;
+	}
+
 	return 0;
 }
 
 int
 as_complete_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
+	int i = 0;
+	while (i < as->num_regions) {
+		if (as->readonly_preparation[i] != NULL) {
+			as->readonly_preparation[i]->writeable = 0;
+			i++;
+		} else {
+			break;
+		}
+	}
 
-	(void)as;
+	kfree(as->readonly_preparation);
 	return 0;
 }
 
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/*
-	 * Write this.
-	 */
-
-	(void)as;
-
 	/* Initial user-level stack pointer */
+	as_define_region(as, USERSTACK - USER_STACKPAGES * PAGE_SIZE, USER_STACKPAGES * PAGE_SIZE, 1, 1, 0);
 	*stackptr = USERSTACK;
 
 	return 0;

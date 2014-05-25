@@ -40,6 +40,8 @@ void initialize_frame_table(void) {
 	int total_num_pages = (paddr_high - paddr_low) / PAGE_SIZE;
 	int size_of_frame_table = total_num_pages * sizeof(struct frame_table_entry);
 	free_addr = paddr_low + size_of_frame_table;
+	// Align to the next page frame
+	free_addr = free_addr + (PAGE_SIZE - (free_addr % PAGE_SIZE));
 
 	lock_acquire(frame_table_lock);
 	int i = 0;
@@ -52,17 +54,8 @@ void initialize_frame_table(void) {
 	lock_release(frame_table_lock);
 }
 
-/* Note that this function returns a VIRTUAL address, not a physical 
- * address
- * WARNING: this function gets called very early, before
- * vm_bootstrap().  You may wish to modify main.c to call your
- * frame table initialisation function, or check to see if the
- * frame table has been initialised and call ram_stealmem() otherwise.
- */
-
-vaddr_t alloc_kpages(int npages)
-{
-	vaddr_t firstaddr;
+paddr_t getppages(unsigned long npages) {
+	paddr_t firstaddr;
 
 	if (frame_table == UNSET) {
 		spinlock_acquire(&stealmem_lock);
@@ -84,9 +77,26 @@ vaddr_t alloc_kpages(int npages)
 		lock_release(frame_table_lock);
 	}
 
-	bzero((void *)firstaddr, PAGE_SIZE);
+	bzero((void *)PADDR_TO_KVADDR(firstaddr), PAGE_SIZE);
 
-	return PADDR_TO_KVADDR(firstaddr);
+	return firstaddr;
+}
+
+/* Note that this function returns a VIRTUAL address, not a physical 
+ * address
+ * WARNING: this function gets called very early, before
+ * vm_bootstrap().  You may wish to modify main.c to call your
+ * frame table initialisation function, or check to see if the
+ * frame table has been initialised and call ram_stealmem() otherwise.
+ */
+
+vaddr_t alloc_kpages(int npages)
+{	
+	paddr_t pa = getppages(npages);
+	if (pa == 0) {
+		return 0;
+	}
+	return PADDR_TO_KVADDR(pa);
 }
 
 void free_kpages(vaddr_t addr)
