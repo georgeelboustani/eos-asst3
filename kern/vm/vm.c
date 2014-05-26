@@ -27,7 +27,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 {
 	//vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
 	paddr_t paddr;
-	int i;
+//	int i;
 	struct addrspace *as;
 	int spl;
 
@@ -79,32 +79,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return EINVAL;
 	}
 
-//     vbase1 = as->as_vbase1;
-//     vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
-//     vbase2 = as->as_vbase2;
-//     vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
-//     stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
-//     stacktop = USERSTACK;
-//
-//     if (faultaddress >= vbase1 && faultaddress < vtop1) {
-//         paddr = (faultaddress - vbase1) + as->as_pbase1;
-//     }
-//     else if (faultaddress >= vbase2 && faultaddress < vtop2) {
-//         paddr = (faultaddress - vbase2) + as->as_pbase2;
-//     }
-//     else if (faultaddress >= stackbase && faultaddress < stacktop) {
-//         paddr = (faultaddress - stackbase) + as->as_stackpbase;
-//     }
-//     else {
-//         return EFAULT;
-//     }
-
 	struct page_table_entry* page = page_walk(faultaddress, as, 1);
 	if (page != NULL) {
 		// We found a page mapped to the vaddr.
 		paddr = (faultaddress - region->vbase) + page->pbase;
-		/* make sure it's page-aligned */
-		KASSERT((paddr & PAGE_FRAME) == paddr);
 	}
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
@@ -114,25 +92,31 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo;
 
 	// TODO - fix this motherfucking
-	for (i=0; i<NUM_TLB; i++) {
-		tlb_read(&ehi, &elo, i);
-		if (elo & TLBLO_VALID) {
-			continue;
-		}
-		write_tlb_entry(faultaddress, paddr, i);
+//	for (i=0; i<NUM_TLB; i++) {
+//		tlb_read(&ehi, &elo, i);
+//		if (elo & TLBLO_VALID) {
+//			continue;
+//		}
+//		write_tlb_entry(faultaddress, paddr, i);
+//		splx(spl);
+//		return 0;
+//	}
+	// seems to be working
+	int tlb_index = tlb_probe(faultaddress, faultaddress);
+	if (tlb_index >= 0) {
+		tlb_read(&ehi, &elo, tlb_index);
+		write_tlb_entry(faultaddress, paddr, tlb_index);
 		splx(spl);
+
+		return 0;
+	} else {
+		// If we got here then there's no more space in tlb. Knock one off
+		int index = clock_hand_tlb_knockoff();
+		write_tlb_entry(faultaddress, paddr, index);
+		splx(spl);
+
 		return 0;
 	}
-
-	// If we got here then there's no more space in tlb. Knock one off
-	int index = clock_hand_tlb_knockoff();
-	write_tlb_entry(faultaddress, paddr, index);
-	splx(spl);
-	return 0;
-
-	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
-	//splx(spl);
-	return EFAULT;
 }
 
 void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, int index) {

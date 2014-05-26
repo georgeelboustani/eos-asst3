@@ -79,6 +79,7 @@ paddr_t getppages(unsigned long npages) {
 
 	bzero((void *)PADDR_TO_KVADDR(firstaddr), PAGE_SIZE);
 
+	KASSERT(firstaddr % PAGE_SIZE == 0);
 	return firstaddr;
 }
 
@@ -111,6 +112,8 @@ void free_kpages(vaddr_t addr)
 			frame_table[i].free = SET;
 			frame_table[i].fixed = UNSET;
 			freed = SET;
+		} else {
+			// TODO: Clean up the TLB as well.
 		}
 		i++;
 	}
