@@ -159,7 +159,11 @@ int clock_hand_tlb_knockoff(void) {
 void
 vm_tlbshootdown_all(void)
 {
-	panic("vm tried to do tlb shootdown?!\n");
+	int i = 0;
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+	//panic("vm tried to do tlb shootdown?!\n");
 }
 
 void
