@@ -301,7 +301,7 @@ as_destroy(struct addrspace *as)
 		}
 		i++;
 	}
-	
+
 	kfree(as->page_directory);
 	kfree(as);
 }
@@ -418,7 +418,7 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
 	/* TODO double check this plz - Initial user-level stack pointer */
 	as_define_region(as, USERSTACK - USER_STACKPAGES * PAGE_SIZE, USER_STACKPAGES * PAGE_SIZE, 1, 1, 0);
-	*stackptr =  PADD USERSTACK;
+	*stackptr =  USERSTACK;
 
 	return 0;
 }
