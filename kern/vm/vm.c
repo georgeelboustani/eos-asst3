@@ -103,8 +103,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if (page != NULL) {
 		// We found a page mapped to the vaddr.
 		paddr = (faultaddress - region->vbase) + page->pbase;
-		/* make sure it's page-aligned */
-		KASSERT((paddr & PAGE_FRAME) == paddr);
+		/* TODO - is it necessary to make sure it's page-aligned */
+		//KASSERT((paddr & PAGE_FRAME) == paddr);
 	}
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */

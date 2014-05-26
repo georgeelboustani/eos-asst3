@@ -68,6 +68,7 @@ paddr_t getppages(unsigned long npages) {
 		
 		lock_acquire(frame_table_lock);
 		int i = 0;
+		// TODO - check for max num frame pages, dont keep looking past this
 		while (frame_table[i].free != SET) {
 			i++;
 		}
@@ -107,6 +108,7 @@ void free_kpages(vaddr_t addr)
 	int freed = UNSET;
 	int i = 0;
 	while (!freed) {
+		// TODO - if as != NULL, unmap as and shootdown tlb entry
 		if (PADDR_TO_KVADDR(frame_table[i].paddr) == addr && frame_table[i].as == NULL) {
 			frame_table[i].free = SET;
 			frame_table[i].fixed = UNSET;
