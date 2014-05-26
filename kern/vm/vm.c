@@ -9,6 +9,11 @@
 #include <current.h>
 #include <spl.h>
 
+int clock_hand = 0;
+
+int clock_hand_tlb_knockoff(void);
+void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, int index);
+
 void vm_bootstrap(void)
 {
 	/* Initialise VM sub-system.  You probably want to initialise your
@@ -23,7 +28,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	//vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
 	paddr_t paddr;
 	int i;
-	uint32_t ehi, elo;
 	struct addrspace *as;
 	int spl;
 
@@ -107,28 +111,50 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	spl = splhigh();
 
 
+	uint32_t ehi, elo;
+
 	// TODO - fix this motherfucking
 	for (i=0; i<NUM_TLB; i++) {
 		tlb_read(&ehi, &elo, i);
 		if (elo & TLBLO_VALID) {
 			continue;
 		}
-		ehi = faultaddress;
-		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
-		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
-		tlb_write(ehi, elo, i);
+		write_tlb_entry(faultaddress, paddr, i);
 		splx(spl);
 		return 0;
 	}
+
+	// If we got here then there's no more space in tlb. Knock one off
+	int index = clock_hand_tlb_knockoff();
+	write_tlb_entry(faultaddress, paddr, index);
+	splx(spl);
+	return 0;
 
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
 	//splx(spl);
 	return EFAULT;
 }
 
+void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, int index) {
+	uint32_t ehi = faultaddress;
+	uint32_t elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
+	tlb_write(ehi, elo, index);
+}
+
+int clock_hand_tlb_knockoff(void) {
+	int to_knock = clock_hand;
+	clock_hand = (clock_hand + 1) % NUM_TLB;
+	return to_knock;
+}
+
 /*
  *
  * SMP-specific functions.  Unused in our configuration.
+ *        IMPORTANT NOTE: from tlb_probe :: An entry may be matching even if the valid bit
+ *        is not set. To completely invalidate the TLB, load it with
+ *        translations for addresses in one of the unmapped address
+ *        ranges - these will never be matched.
  */
 void
 vm_tlbshootdown_all(void)

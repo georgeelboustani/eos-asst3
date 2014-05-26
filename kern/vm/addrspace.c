@@ -181,6 +181,7 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 			curr = curr->next;
 			if (curr->index == index) {
 				found = 1;
+				break;
 			}
 		}
 
@@ -292,9 +293,12 @@ as_destroy(struct addrspace *as)
 {
 	destroy_regions(as->first_region);
 	int i = 0;
+	int ii = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
-		// TODO - double check this fucking albert fucking albert
-		//destroy_page_table_entry(as->page_directory[i], i);
+		while (as->page_directory[i] != NULL) {
+			// TODO - double check this fucking albert fucking albert
+			as->page_directory[i] = destroy_page_table_entry(as->page_directory[i], ii);
+		}
 		i++;
 	}
 	kfree(as);
