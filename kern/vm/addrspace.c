@@ -108,7 +108,7 @@ struct region* retrieve_region(struct addrspace* as, vaddr_t faultaddress) {
 	struct region* curr_region = as->first_region;
 	while (curr_region != NULL) {
 		if (faultaddress >= curr_region->vbase &&
-			(faultaddress <= curr_region->vbase + curr_region->npages * PAGE_SIZE)) {
+			(faultaddress < curr_region->vbase + curr_region->npages * PAGE_SIZE)) {
 			KASSERT(curr_region->vbase != 0);
 			KASSERT(curr_region->npages != 0);
 			KASSERT((curr_region->vbase & PAGE_FRAME) == curr_region->vbase);
