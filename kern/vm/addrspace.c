@@ -296,11 +296,13 @@ as_destroy(struct addrspace *as)
 	int ii = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
 		while (as->page_directory[i] != NULL) {
-			// TODO - double check this fucking albert fucking albert
+			// TODO - double check this plz
 			as->page_directory[i] = destroy_page_table_entry(as->page_directory[i], ii);
 		}
 		i++;
 	}
+	
+	kfree(as->page_directory);
 	kfree(as);
 }
 
@@ -414,9 +416,9 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/* Initial user-level stack pointer */
+	/* TODO double check this plz - Initial user-level stack pointer */
 	as_define_region(as, USERSTACK - USER_STACKPAGES * PAGE_SIZE, USER_STACKPAGES * PAGE_SIZE, 1, 1, 0);
-	*stackptr = USERSTACK;
+	*stackptr =  PADD USERSTACK;
 
 	return 0;
 }
