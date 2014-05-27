@@ -156,6 +156,9 @@ struct page_table_entry* add_page_table_entry(struct page_table_entry* head, str
 struct page_table_entry* deep_copy_page_table(struct page_table_entry* old) {
 	if (old != NULL) {
 		struct page_table_entry* new_pte = (struct page_table_entry*) kmalloc(sizeof(struct page_table_entry));
+		if (new_pte == NULL) {
+			return NULL;
+		}
 		new_pte->index = old->index;
 		new_pte->is_dirty = old->is_dirty;
 		new_pte->is_valid = old->is_valid;
@@ -409,7 +412,7 @@ as_prepare_load(struct addrspace *as)
 {
 	as->readonly_preparation = (struct region**)kmalloc(sizeof(struct region*) * as->num_regions);
 	if (as->readonly_preparation == NULL) {
-		panic("no more memory in as_prepare_load?");
+		return ENOMEM;
 	}
 
 	struct region* current_region = as->first_region;
@@ -421,6 +424,11 @@ as_prepare_load(struct addrspace *as)
 			i++;
 		}
 		current_region = current_region->next;
+	}
+
+	while (i < as->num_regions) {
+		as->readonly_preparation[i] = NULL;
+		i++;
 	}
 
 	return 0;
