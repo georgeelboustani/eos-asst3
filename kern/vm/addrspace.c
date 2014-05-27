@@ -425,7 +425,7 @@ as_prepare_load(struct addrspace *as)
 		}
 		current_region = current_region->next;
 	}
-
+	// TODO - check why these are is not zeroed by kmalloc?
 	while (i < as->num_regions) {
 		as->readonly_preparation[i] = NULL;
 		i++;
