@@ -217,8 +217,16 @@ struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int crea
 		current_table_entry = current_table_entry->next;
 	}
 
+	// We didn't find an existing page entry
 	if (create_flag) {
-		struct page_table_entry* new_pte = create_page_table(getppages(1), 1, 1, second_index, offset);
+		paddr_t page_location = getppages(1);
+		KASSERT(page_location != 0);
+		KASSERT((page_location & PAGE_FRAME) == page_location);
+
+		struct page_table_entry* new_pte = create_page_table(page_location, 1, 1, second_index, offset);
+		
+		// TODO - this KASSERT is defensive, is it necessary
+		KASSERT((new_pte->pbase & PAGE_FRAME) == new_pte->pbase);
 		as->page_directory[first_index] = add_page_table_entry(as->page_directory[first_index], new_pte);
 		return new_pte;
 	}
@@ -390,7 +398,7 @@ as_prepare_load(struct addrspace *as)
 		current_region = current_region->next;
 		i++;
 	}
-	
+
 	return 0;
 }
 
