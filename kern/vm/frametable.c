@@ -123,7 +123,7 @@ void free_kpages(vaddr_t addr)
 	int i = 0;
 	while (!freed && i < total_num_frames) {
 		// TODO - if as != NULL, unmap as and shootdown tlb entry
-		if (PADDR_TO_KVADDR(frame_table[i].paddr) >= addr) {
+		if (PADDR_TO_KVADDR(frame_table[i].paddr) == addr) {
 			if (frame_table[i].as != NULL) {
 				// TODO: Clean up the TLB as well. maybe outside this if statement
 			}
