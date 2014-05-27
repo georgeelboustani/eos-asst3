@@ -53,7 +53,7 @@ struct region* create_region(vaddr_t vbase, size_t npages,
 		int readable, int writeable, int executable);
 void add_region(struct addrspace* as, struct region* new_region);
 struct region* deep_copy_region(struct region* old);
-void destroy_regions(struct region* region);
+void destroy_regions(struct addrspace* as, struct region* region);
 struct region* retrieve_region(struct addrspace* as, vaddr_t faultaddress);
 
 struct region* create_region(vaddr_t vbase, size_t npages, int readable, int writeable, int executable) {
@@ -98,9 +98,10 @@ struct region* deep_copy_region(struct region* old) {
 	}
 }
 
-void destroy_regions(struct region* region) {
+void destroy_regions(struct addrspace* as, struct region* region) {
 	if (region != NULL) {
-		destroy_regions(region->next);
+		as->num_regions--;
+		destroy_regions(as, region->next);
 		kfree(region);
 	}
 }
@@ -177,13 +178,14 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 		struct page_table_entry* curr = head;
 		struct page_table_entry* prev = NULL;
 		int found = 0;
-		while (curr != NULL && (curr->index != index)) {
+		while (curr != NULL && (curr->index < index)) {
 			prev = curr;
-			curr = curr->next;
 			if (curr->index == index) {
 				found = 1;
+				curr = curr->next;
 				break;
 			}
+			curr = curr->next;
 		}
 
 		if (!found) {
@@ -300,13 +302,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
-	destroy_regions(as->first_region);
+	destroy_regions(as, as->first_region);
 	int i = 0;
 	int ii = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
-		while (as->page_directory[i] != NULL) {
-			// TODO - double check this plz
+		while (ii < PAGE_TABLE_TWO_SIZE && as->page_directory[i] != NULL) {
 			as->page_directory[i] = destroy_page_table_entry(as->page_directory[i], ii);
+			ii++;
 		}
 		i++;
 	}
@@ -345,6 +347,23 @@ as_deactivate(void)
 	 * anything. See proc.c for an explanation of why it (might)
 	 * be needed.
 	 */
+	int spl;
+	struct addrspace *as;
+
+	as = proc_getas();
+	if (as == NULL) {
+		/*
+		 * Kernel thread without an address space; leave the
+		 * prior address space in place.
+		 */
+		return;
+	}
+
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+	vm_tlbshootdown_all();
+
+	splx(spl);
 }
 
 /*
