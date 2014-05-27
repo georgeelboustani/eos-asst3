@@ -305,7 +305,7 @@ as_destroy(struct addrspace *as)
 			struct page_table_entry* pe = as->page_directory[i];
 			as->page_directory[i] = pe->next;
 			// TODO - we need to get this free working
-			//free_kpages(PADDR_TO_KVADDR(pe->pbase));
+			kfree((void*)PADDR_TO_KVADDR(pe->pbase));
 			kfree(pe);
 		}
 		i++;

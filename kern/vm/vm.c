@@ -87,10 +87,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	struct page_table_entry* page = page_walk(faultaddress, as, 1);
 	if (page != NULL) {
 		// We found a page mapped to the vaddr.
-		paddr = (faultaddress - region->vbase) + page->pbase;
+		paddr = page->pbase;
 		
 		/* TODO - is it necessary to make sure it's page-aligned */
-		//KASSERT((paddr & PAGE_FRAME) == paddr);
+		KASSERT((paddr & PAGE_FRAME) == paddr);
 	} else {
 		panic("why cant we find a page");
 	}
