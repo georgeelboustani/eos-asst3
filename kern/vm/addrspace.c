@@ -60,9 +60,8 @@ struct region* create_region(vaddr_t vbase, size_t npages, int readable, int wri
 	struct region* new_region = (struct region*) kmalloc(sizeof(struct region));
 	new_region->vbase = vbase;
 	new_region->npages = npages;
-	// TODO - double check these &
-	new_region->readable = readable;// >> 2;
-	new_region->writeable = writeable;// >> 1;
+	new_region->readable = readable;
+	new_region->writeable = writeable;
 	new_region->executable = executable;
 	new_region->next = NULL;
 
@@ -74,12 +73,10 @@ void add_region(struct addrspace* as, struct region* new_region) {
 		as->first_region = new_region;
 	} else {
 		struct region* curr_region = as->first_region;
-		struct region* previous_region = NULL;
-		while (curr_region != NULL) {
-			previous_region = curr_region;
+		while (curr_region->next != NULL) {
 			curr_region = curr_region->next;
 		}
-		previous_region->next = new_region;
+		curr_region->next = new_region;
 	}
 }
 
@@ -178,13 +175,13 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 		struct page_table_entry* curr = head;
 		struct page_table_entry* prev = NULL;
 		int found = 0;
-		while (curr != NULL && (curr->index < index)) {
-			prev = curr;
+		// TODO - not sure why the second check, early exit?
+		while (curr != NULL && (curr->index <= index)) {
 			if (curr->index == index) {
 				found = 1;
-				curr = curr->next;
 				break;
 			}
+			prev = curr;
 			curr = curr->next;
 		}
 
@@ -205,7 +202,7 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 
 struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int create_flag) {
 	int first_index = (vaddr & FIRST_TABLE_INDEX_MASK) >> 22;
-	int second_index = (vaddr & SECOND_TABLE_INDEX_MASK) >> 12;
+	int second_index = ((vaddr & SECOND_TABLE_INDEX_MASK) >> 12);
 	size_t offset = vaddr & OFFSET_MASK;
 
 	struct page_table_entry* current_table_entry = as->page_directory[first_index];
@@ -302,18 +299,22 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
-	destroy_regions(as, as->first_region);
 	int i = 0;
-	int ii = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
-		while (ii < PAGE_TABLE_TWO_SIZE && as->page_directory[i] != NULL) {
-			as->page_directory[i] = destroy_page_table_entry(as->page_directory[i], ii);
-			ii++;
+		while (as->page_directory[i] != NULL) {
+			struct page_table_entry* pe = as->page_directory[i];
+			as->page_directory[i] = pe->next;
+			// TODO - we need to get this free working
+			//free_kpages(PADDR_TO_KVADDR(pe->pbase));
+			kfree(pe);
 		}
 		i++;
 	}
 
 	kfree(as->page_directory);
+
+	destroy_regions(as, as->first_region);
+
 	kfree(as);
 }
 
@@ -406,6 +407,9 @@ int
 as_prepare_load(struct addrspace *as)
 {
 	as->readonly_preparation = (struct region**)kmalloc(sizeof(struct region*) * as->num_regions);
+	if (as->readonly_preparation == NULL) {
+		panic("no more memory in as_prepare_load?");
+	}
 
 	struct region* current_region = as->first_region;
 	int i = 0;
@@ -413,9 +417,9 @@ as_prepare_load(struct addrspace *as)
 		if (!current_region->writeable) {
 			current_region->writeable = 1;
 			as->readonly_preparation[i] = current_region;
+			i++;
 		}
 		current_region = current_region->next;
-		i++;
 	}
 
 	return 0;

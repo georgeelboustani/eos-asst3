@@ -49,14 +49,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		  */
 		return EFAULT;
 	}
-
+	//size_t offset = faultaddress & ~(PAGE_FRAME);
 	faultaddress &= PAGE_FRAME;
 
 	DEBUG(DB_VM, "vm: fault: 0x%x\n", faultaddress);
 
 	struct region* region = retrieve_region(as, faultaddress);
 	if (region == NULL) {
-		panic("Cannot retrieve associated region\n");
+		return EFAULT;
 	}
 
 	switch (faulttype) {
@@ -81,7 +81,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	// Now we know the faultaddress lies within the region
 	// TODO - align the faultaddress to the start of a page in the region
-	faultaddress = faultaddress - (faultaddress % PAGE_SIZE);
+	//faultaddress = faultaddress - (faultaddress % PAGE_SIZE);
 	KASSERT((faultaddress & PAGE_FRAME) == faultaddress);
 
 	struct page_table_entry* page = page_walk(faultaddress, as, 1);
@@ -97,22 +97,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
-
-
-	uint32_t ehi, elo;
-
-	// TODO - fix this motherfucking
-	int i = 0;
-	for (i = 0; i < NUM_TLB; i++) {
-		tlb_read(&ehi, &elo, i);
-		if (elo & TLBLO_VALID) {
-			continue;
-		}
-
-		write_tlb_entry(faultaddress, paddr, i);
-		splx(spl);
-		return 0;
-	}
 
 	// If we got here then there's no more space in tlb. Knock one off
 	int index = clock_hand_tlb_knockoff();

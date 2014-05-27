@@ -39,11 +39,14 @@ void initialize_frame_table(void) {
 
 	frame_table = (struct frame_table_entry*) PADDR_TO_KVADDR(paddr_low);
 
-	int total_num_frames = (paddr_high - paddr_low) / PAGE_SIZE;
+	total_num_frames = (paddr_high - paddr_low) / PAGE_SIZE;
 	int size_of_frame_table = total_num_frames * sizeof(struct frame_table_entry);
 	free_addr = paddr_low + size_of_frame_table;
 	// Align to the next page frame
 	free_addr = free_addr + (PAGE_SIZE - (free_addr % PAGE_SIZE));
+	
+	KASSERT((free_addr % PAGE_SIZE) == 0);
+	KASSERT((free_addr & PAGE_FRAME) == free_addr);
 
 	lock_acquire(frame_table_lock);
 	int i = 0;
@@ -52,17 +55,17 @@ void initialize_frame_table(void) {
 		frame_table[i].free = SET;
 		frame_table[i].fixed = UNSET;
 		frame_table[i].paddr = free_addr + i * PAGE_SIZE;
-		frame_table[i].vaddr = PADDR_TO_KVADDR(frame_table[i].paddr);
 	}
 	lock_release(frame_table_lock);
 }
 
+// TODO - optimise this, linked list of frees? to make it O(1) complexity
 paddr_t getppages(unsigned long npages) {
-	paddr_t firstaddr;
+	paddr_t nextfree;
 
 	if (frame_table == UNSET) {
 		spinlock_acquire(&stealmem_lock);
-		firstaddr = ram_stealmem(npages);
+		nextfree = ram_stealmem(npages);
 		spinlock_release(&stealmem_lock);
 	} else {
 		if (npages > 1) {
@@ -72,19 +75,26 @@ paddr_t getppages(unsigned long npages) {
 		lock_acquire(frame_table_lock);
 		int i = 0;
 		// TODO - check for max num frame pages, dont keep looking past this
-		while (frame_table[i].free != SET) {
+		while (frame_table[i].free != SET && i < total_num_frames) {
 			i++;
 		}
-		frame_table[i].free = UNSET;
-		frame_table[i].fixed = UNSET;
-		firstaddr = frame_table[i].paddr;
-		lock_release(frame_table_lock);
+
+		if (i < total_num_frames) {
+			frame_table[i].free = UNSET;
+			frame_table[i].fixed = UNSET;
+			nextfree = frame_table[i].paddr;
+			lock_release(frame_table_lock);
+		} else {
+			// Out of memory
+			lock_release(frame_table_lock);
+			return 0;
+		}
 	}
 
-	bzero((void *)PADDR_TO_KVADDR(firstaddr), PAGE_SIZE);
+	bzero((void *)PADDR_TO_KVADDR(nextfree), PAGE_SIZE);
 
-	KASSERT(firstaddr % PAGE_SIZE == 0);
-	return firstaddr;
+	KASSERT(nextfree % PAGE_SIZE == 0);
+	return nextfree;
 }
 
 /* Note that this function returns a VIRTUAL address, not a physical 
@@ -113,11 +123,11 @@ void free_kpages(vaddr_t addr)
 	int i = 0;
 	while (!freed && i < total_num_frames) {
 		// TODO - if as != NULL, unmap as and shootdown tlb entry
-		if (PADDR_TO_KVADDR(frame_table[i].paddr) == addr) {
+		if (PADDR_TO_KVADDR(frame_table[i].paddr) >= addr) {
 			if (frame_table[i].as != NULL) {
 				// TODO: Clean up the TLB as well. maybe outside this if statement
 			}
-			bzero((void *)frame_table[i].vaddr, PAGE_SIZE);
+			//bzero((void *)frame_table[i].vaddr, PAGE_SIZE);
 			frame_table[i].free = SET;
 			frame_table[i].fixed = UNSET;
 			freed = SET;
