@@ -16,6 +16,7 @@ struct frame_table_entry {
 	// Map a physical address to a virtual address
 	struct addrspace* as;
 	paddr_t paddr;
+	vaddr_t vaddr;
 
 	// Indicate whether or not this frame is taken.
 	int free;
@@ -27,6 +28,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 struct frame_table_entry* frame_table = UNSET;
 paddr_t free_addr;
 struct lock* frame_table_lock;
+int total_num_frames;
 
 void initialize_frame_table(void) {
 	frame_table_lock = lock_create("frame_table_lock");
@@ -37,8 +39,8 @@ void initialize_frame_table(void) {
 
 	frame_table = (struct frame_table_entry*) PADDR_TO_KVADDR(paddr_low);
 
-	int total_num_pages = (paddr_high - paddr_low) / PAGE_SIZE;
-	int size_of_frame_table = total_num_pages * sizeof(struct frame_table_entry);
+	int total_num_frames = (paddr_high - paddr_low) / PAGE_SIZE;
+	int size_of_frame_table = total_num_frames * sizeof(struct frame_table_entry);
 	free_addr = paddr_low + size_of_frame_table;
 	// Align to the next page frame
 	free_addr = free_addr + (PAGE_SIZE - (free_addr % PAGE_SIZE));
@@ -46,10 +48,11 @@ void initialize_frame_table(void) {
 	lock_acquire(frame_table_lock);
 	int i = 0;
 	// Initialise the frame table, preferrably assign state values
-	for (i = 0; i < total_num_pages; i++) {
+	for (i = 0; i < total_num_frames; i++) {
 		frame_table[i].free = SET;
 		frame_table[i].fixed = UNSET;
 		frame_table[i].paddr = free_addr + i * PAGE_SIZE;
+		frame_table[i].vaddr = PADDR_TO_KVADDR(frame_table[i].paddr);
 	}
 	lock_release(frame_table_lock);
 }
@@ -108,14 +111,16 @@ void free_kpages(vaddr_t addr)
 	lock_acquire(frame_table_lock);
 	int freed = UNSET;
 	int i = 0;
-	while (!freed) {
+	while (!freed && i < total_num_frames) {
 		// TODO - if as != NULL, unmap as and shootdown tlb entry
-		if (PADDR_TO_KVADDR(frame_table[i].paddr) == addr && frame_table[i].as == NULL) {
+		if (PADDR_TO_KVADDR(frame_table[i].paddr) == addr) {
+			if (frame_table[i].as != NULL) {
+				// TODO: Clean up the TLB as well. maybe outside this if statement
+			}
+			bzero((void *)frame_table[i].vaddr, PAGE_SIZE);
 			frame_table[i].free = SET;
 			frame_table[i].fixed = UNSET;
 			freed = SET;
-		} else {
-			// TODO: Clean up the TLB as well.
 		}
 		i++;
 	}
