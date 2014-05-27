@@ -38,6 +38,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <elf.h>
 
 #define OFFSET_MASK 0x00000fff
 #define FIRST_TABLE_INDEX_MASK 0xffc00000
@@ -55,13 +56,13 @@ struct region* deep_copy_region(struct region* old);
 void destroy_regions(struct region* region);
 struct region* retrieve_region(struct addrspace* as, vaddr_t faultaddress);
 
-struct region* create_region(vaddr_t vbase, size_t npages,
-		int readable, int writeable, int executable) {
+struct region* create_region(vaddr_t vbase, size_t npages, int readable, int writeable, int executable) {
 	struct region* new_region = (struct region*) kmalloc(sizeof(struct region));
 	new_region->vbase = vbase;
 	new_region->npages = npages;
-	new_region->readable = readable;
-	new_region->writeable = writeable;
+	// TODO - double check these &
+	new_region->readable = readable;// >> 2;
+	new_region->writeable = writeable;// >> 1;
 	new_region->executable = executable;
 	new_region->next = NULL;
 
@@ -389,7 +390,7 @@ as_prepare_load(struct addrspace *as)
 		current_region = current_region->next;
 		i++;
 	}
-
+	
 	return 0;
 }
 
@@ -414,7 +415,7 @@ int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
 	/* TODO double check this plz - Initial user-level stack pointer */
-	as_define_region(as, USERSTACK - USER_STACKPAGES * PAGE_SIZE, USER_STACKPAGES * PAGE_SIZE, 1, 1, 0);
+	as_define_region(as, USERSTACK - USER_STACKPAGES * PAGE_SIZE, USER_STACKPAGES * PAGE_SIZE, 1, 1, 1);
 	*stackptr =  USERSTACK;
 
 	return 0;
