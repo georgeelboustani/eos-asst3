@@ -202,6 +202,7 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 
 struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int create_flag) {
 	int first_index = (vaddr & FIRST_TABLE_INDEX_MASK) >> 22;
+	// TODO - check is second_index still growing by 4's?
 	int second_index = ((vaddr & SECOND_TABLE_INDEX_MASK) >> 12);
 	size_t offset = vaddr & OFFSET_MASK;
 
