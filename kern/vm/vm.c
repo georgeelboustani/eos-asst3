@@ -81,14 +81,18 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	// Now we know the faultaddress lies within the region
 	// TODO - align the faultaddress to the start of a page in the region
-	
+	faultaddress = faultaddress - (faultaddress % PAGE_SIZE);
+	KASSERT((faultaddress & PAGE_FRAME) == faultaddress);
 
 	struct page_table_entry* page = page_walk(faultaddress, as, 1);
 	if (page != NULL) {
 		// We found a page mapped to the vaddr.
 		paddr = (faultaddress - region->vbase) + page->pbase;
+		
 		/* TODO - is it necessary to make sure it's page-aligned */
 		//KASSERT((paddr & PAGE_FRAME) == paddr);
+	} else {
+		panic("why cant we find a page");
 	}
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
@@ -98,31 +102,24 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo;
 
 	// TODO - fix this motherfucking
-//	for (i=0; i<NUM_TLB; i++) {
-//		tlb_read(&ehi, &elo, i);
-//		if (elo & TLBLO_VALID) {
-//			continue;
-//		}
-//		write_tlb_entry(faultaddress, paddr, i);
-//		splx(spl);
-//		return 0;
-//	}
-	// seems to be working
-	int tlb_index = tlb_probe(faultaddress, faultaddress);
-	if (tlb_index >= 0) {
-		tlb_read(&ehi, &elo, tlb_index);
-		write_tlb_entry(faultaddress, paddr, tlb_index);
-		splx(spl);
+	int i = 0;
+	for (i = 0; i < NUM_TLB; i++) {
+		tlb_read(&ehi, &elo, i);
+		if (elo & TLBLO_VALID) {
+			continue;
+		}
 
-		return 0;
-	} else {
-		// If we got here then there's no more space in tlb. Knock one off
-		int index = clock_hand_tlb_knockoff();
-		write_tlb_entry(faultaddress, paddr, index);
+		write_tlb_entry(faultaddress, paddr, i);
 		splx(spl);
-
 		return 0;
 	}
+
+	// If we got here then there's no more space in tlb. Knock one off
+	int index = clock_hand_tlb_knockoff();
+	write_tlb_entry(faultaddress, paddr, index);
+	splx(spl);
+
+	return 0;
 }
 
 void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, int index) {
