@@ -304,7 +304,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
-
+	
 	int i = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
 		while (as->page_directory[i] != NULL) {
@@ -327,6 +327,7 @@ as_destroy(struct addrspace *as)
 void
 as_activate(void)
 {
+	int spl;
 	struct addrspace *as;
 
 	as = proc_getas();
@@ -339,9 +340,9 @@ as_activate(void)
 	}
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
-	//spl = splhigh();
+	spl = splhigh();
 	vm_tlbshootdown_all();
-	//splx(spl);
+	splx(spl);
 }
 
 void
