@@ -48,7 +48,6 @@ void initialize_frame_table(void) {
 	KASSERT((free_addr % PAGE_SIZE) == 0);
 	KASSERT((free_addr & PAGE_FRAME) == free_addr);
 
-	//lock_acquire(frame_table_lock);
 	int i = 0;
 	// Initialise the frame table, preferrably assign state values
 	for (i = 0; i < total_num_frames; i++) {
@@ -56,23 +55,22 @@ void initialize_frame_table(void) {
 		frame_table[i].fixed = UNSET;
 		frame_table[i].paddr = free_addr + i * PAGE_SIZE;
 	}
-	//lock_release(frame_table_lock);
 }
 
 // TODO - optimise this, linked list of frees? to make it O(1) complexity
 paddr_t getppages(unsigned long npages) {
 	paddr_t nextfree;
 
-	spinlock_acquire(&stealmem_lock);
 	if (frame_table == UNSET) {
-		
+		spinlock_acquire(&stealmem_lock);
 		nextfree = ram_stealmem(npages);
+		spinlock_release(&stealmem_lock);
 	} else {
 		if (npages > 1) {
 			return 0;
 		}
 		
-		//lock_acquire(frame_table_lock);
+		lock_acquire(frame_table_lock);
 		int i = 0;
 		// TODO - check for max num frame pages, dont keep looking past this
 		while (frame_table[i].free != SET && i < total_num_frames) {
@@ -83,15 +81,13 @@ paddr_t getppages(unsigned long npages) {
 			frame_table[i].free = UNSET;
 			frame_table[i].fixed = UNSET;
 			nextfree = frame_table[i].paddr;
-			//lock_release(frame_table_lock);
+			lock_release(frame_table_lock);
 		} else {
 			// Out of memory
-			//lock_release(frame_table_lock);
+			lock_release(frame_table_lock);
 			return 0;
 		}
 	}
-		spinlock_release(&stealmem_lock);
-
 
 	bzero((void *)PADDR_TO_KVADDR(nextfree), PAGE_SIZE);
 
