@@ -12,7 +12,7 @@
 int clock_hand = 0;
 
 int clock_hand_tlb_knockoff(void);
-void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, int index);
+void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr);
 
 void vm_bootstrap(void)
 {
@@ -27,7 +27,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 {
 	paddr_t paddr;
 	struct addrspace *as;
-	int spl;
 
 	if (curproc == NULL) {
 		 /*
@@ -88,20 +87,21 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return ENOMEM;
 	}
 
-	/* Disable interrupts on this CPU while frobbing the TLB. */
-	spl = splhigh();
-
+	int spl = splhigh();
 	// If we got here then there's no more space in tlb. Knock one off
-	int index = clock_hand_tlb_knockoff();
-	write_tlb_entry(faultaddress, paddr, index);
+	write_tlb_entry(faultaddress, paddr);
 	splx(spl);
 
 	return 0;
 }
 
-void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, int index) {
+void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr) {	
+	int index;
 	uint32_t ehi = faultaddress;
 	uint32_t elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+
+	index = clock_hand_tlb_knockoff();
+
 	DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 	tlb_write(ehi, elo, index);
 }
@@ -124,7 +124,7 @@ void
 vm_tlbshootdown_all(void)
 {
 	int i = 0;
-	for (i=0; i<NUM_TLB; i++) {
+	for (i=0; i < NUM_TLB; i++) {
 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
 	}
 }

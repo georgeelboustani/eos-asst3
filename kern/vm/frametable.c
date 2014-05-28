@@ -118,7 +118,7 @@ void free_kpages(vaddr_t addr)
 {
 	// Only good if this page is not mapped to user address space,
 	// if as != null we need to unmap the as and shootdown the TLB entry.
-	lock_acquire(frame_table_lock);
+	//lock_acquire(frame_table_lock);
 	int freed = UNSET;
 	int i = 0;
 	while (!freed && i < total_num_frames) {
@@ -134,6 +134,6 @@ void free_kpages(vaddr_t addr)
 		}
 		i++;
 	}
-	lock_release(frame_table_lock);
+	//lock_release(frame_table_lock);
 }
 

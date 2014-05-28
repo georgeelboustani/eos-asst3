@@ -155,16 +155,19 @@ struct page_table_entry* add_page_table_entry(struct page_table_entry* head, str
 
 struct page_table_entry* deep_copy_page_table(struct page_table_entry* old) {
 	if (old != NULL) {
-		struct page_table_entry* new_pte = (struct page_table_entry*) kmalloc(sizeof(struct page_table_entry));
+		paddr_t page_location = getppages(1);
+		KASSERT(page_location != 0);
+		KASSERT((page_location & PAGE_FRAME) == page_location);
+
+		struct page_table_entry* new_pte = create_page_table(page_location, old->is_dirty, old->is_valid, old->index, old->offset);
 		if (new_pte == NULL) {
 			return NULL;
 		}
-		new_pte->index = old->index;
-		new_pte->is_dirty = old->is_dirty;
-		new_pte->is_valid = old->is_valid;
-		new_pte->offset = old->offset;
-		new_pte->pbase = old->pbase;
+
+		memmove((void *)PADDR_TO_KVADDR(page_location), (const void *)PADDR_TO_KVADDR(old->pbase), PAGE_SIZE);
+
 		new_pte->next = deep_copy_page_table(old->next);
+
 		return new_pte;
 	} else {
 		return NULL;
@@ -210,13 +213,11 @@ struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int crea
 	size_t offset = vaddr & OFFSET_MASK;
 
 	struct page_table_entry* current_table_entry = as->page_directory[first_index];
-	struct page_table_entry* previous_table_entry = NULL;
 	while (current_table_entry != NULL) {
 		if (current_table_entry->index == second_index) {
 			return current_table_entry;
 		}
 
-		previous_table_entry = current_table_entry;
 		current_table_entry = current_table_entry->next;
 	}
 
@@ -303,6 +304,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
+
 	int i = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
 		while (as->page_directory[i] != NULL) {
@@ -325,7 +327,6 @@ as_destroy(struct addrspace *as)
 void
 as_activate(void)
 {
-	int spl;
 	struct addrspace *as;
 
 	as = proc_getas();
@@ -338,9 +339,9 @@ as_activate(void)
 	}
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
-	spl = splhigh();
+	//spl = splhigh();
 	vm_tlbshootdown_all();
-	splx(spl);
+	//splx(spl);
 }
 
 void
