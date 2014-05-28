@@ -25,12 +25,9 @@ void vm_bootstrap(void)
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
-	//vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
 	paddr_t paddr;
-//	int i;
 	struct addrspace *as;
 	int spl;
-
 
 	if (curproc == NULL) {
 		 /*
@@ -49,7 +46,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		  */
 		return EFAULT;
 	}
-	//size_t offset = faultaddress & ~(PAGE_FRAME);
 	faultaddress &= PAGE_FRAME;
 
 	DEBUG(DB_VM, "vm: fault: 0x%x\n", faultaddress);
@@ -80,8 +76,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 	// Now we know the faultaddress lies within the region
-	// TODO - align the faultaddress to the start of a page in the region
-	//faultaddress = faultaddress - (faultaddress % PAGE_SIZE);
 	KASSERT((faultaddress & PAGE_FRAME) == faultaddress);
 
 	struct page_table_entry* page = page_walk(faultaddress, as, 1);
@@ -89,10 +83,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		// We found a page mapped to the vaddr.
 		paddr = page->pbase;
 		
-		/* TODO - is it necessary to make sure it's page-aligned */
 		KASSERT((paddr & PAGE_FRAME) == paddr);
 	} else {
-		panic("why cant we find a page");
+		return ENOMEM;
 	}
 
 	/* Disable interrupts on this CPU while frobbing the TLB. */
@@ -134,7 +127,6 @@ vm_tlbshootdown_all(void)
 	for (i=0; i<NUM_TLB; i++) {
 		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
 	}
-	//panic("vm tried to do tlb shootdown?!\n");
 }
 
 void

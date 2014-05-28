@@ -340,7 +340,6 @@ as_activate(void)
 	/* Disable interrupts on this CPU while frobbing the TLB. */
 	spl = splhigh();
 	vm_tlbshootdown_all();
-
 	splx(spl);
 }
 
