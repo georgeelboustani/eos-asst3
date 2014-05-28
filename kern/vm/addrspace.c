@@ -284,11 +284,12 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	struct addrspace *newas;
 
 	newas = as_create();
-	if (newas==NULL) {
+	if (newas == NULL) {
 		return ENOMEM;
 	}
 
 	newas->first_region = deep_copy_region(old->first_region);
+	newas->num_regions = old->num_regions;
 
 	int i = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
@@ -304,7 +305,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
-	
+
 	int i = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
 		while (as->page_directory[i] != NULL) {

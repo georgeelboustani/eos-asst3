@@ -12,7 +12,7 @@
 int clock_hand = 0;
 
 int clock_hand_tlb_knockoff(void);
-void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr);
+void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, uint32_t dirty_bit);
 
 void vm_bootstrap(void)
 {
@@ -53,25 +53,28 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if (region == NULL) {
 		return EFAULT;
 	}
-
+	uint32_t dirty_bit = TLBLO_DIRTY;
 	switch (faulttype) {
 		case VM_FAULT_READONLY:
-			panic("Write attempted on read section\n");
-			break;
+			return EFAULT;
 		case VM_FAULT_READ:
 			// read attempted
 			if (!region->readable) {
-				panic("Attempted to read an unreadable region\n");
+				return EFAULT;
 			}
 			break;
 		case VM_FAULT_WRITE:
 			// write attempted
 			if (!region->writeable) {
-				panic("Attempted to write an unwriteable region\n");
+				return EFAULT;
 			}
 			break;
 		default:
 			return EINVAL;
+	}
+
+	if (!region->writeable) {
+		dirty_bit = 0;
 	}
 
 	// Now we know the faultaddress lies within the region
@@ -89,16 +92,16 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	int spl = splhigh();
 	// If we got here then there's no more space in tlb. Knock one off
-	write_tlb_entry(faultaddress, paddr);
+	write_tlb_entry(faultaddress, paddr, dirty_bit);
 	splx(spl);
 
 	return 0;
 }
 
-void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr) {	
+void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, uint32_t dirty_bit) {	
 	int index;
 	uint32_t ehi = faultaddress;
-	uint32_t elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	uint32_t elo = paddr | dirty_bit | TLBLO_VALID;
 
 	index = clock_hand_tlb_knockoff();
 
