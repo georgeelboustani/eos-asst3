@@ -14,9 +14,9 @@
  */
 struct frame_table_entry {
 	// Map a physical address to a virtual address
-	struct addrspace* as;
+	struct addrspace* as; // TODO: George check? Don't need?
 	paddr_t paddr;
-	vaddr_t vaddr;
+	vaddr_t vaddr; // TODO: George check? Don't need?
 
 	// Indicate whether or not this frame is taken.
 	int free;
