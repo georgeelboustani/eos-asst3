@@ -181,7 +181,6 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 		struct page_table_entry* curr = head;
 		struct page_table_entry* prev = NULL;
 		int found = 0;
-		// TODO - not sure why the second check, early exit?
 		while (curr != NULL && (curr->index <= index)) {
 			if (curr->index == index) {
 				found = 1;
@@ -208,7 +207,6 @@ struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head,
 
 struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int create_flag) {
 	int first_index = (vaddr & FIRST_TABLE_INDEX_MASK) >> 22;
-	// TODO - check is second_index still growing by 4's?
 	int second_index = ((vaddr & SECOND_TABLE_INDEX_MASK) >> 12);
 	size_t offset = vaddr & OFFSET_MASK;
 
@@ -229,7 +227,6 @@ struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int crea
 
 		struct page_table_entry* new_pte = create_page_table(page_location, 1, 1, second_index, offset);
 		
-		// TODO - this KASSERT is defensive, is it necessary
 		KASSERT((new_pte->pbase & PAGE_FRAME) == new_pte->pbase);
 		as->page_directory[first_index] = add_page_table_entry(as->page_directory[first_index], new_pte);
 		return new_pte;
@@ -293,7 +290,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	int i = 0;
 	while (i < PAGE_TABLE_ONE_SIZE) {
-		// TODO - double check this
 		newas->page_directory[i] = deep_copy_page_table(old->page_directory[i]);
 		i++;
 	}
@@ -311,7 +307,6 @@ as_destroy(struct addrspace *as)
 		while (as->page_directory[i] != NULL) {
 			struct page_table_entry* pe = as->page_directory[i];
 			as->page_directory[i] = pe->next;
-			// TODO - we need to get this free working
 			kfree((void*)PADDR_TO_KVADDR(pe->pbase));
 			kfree(pe);
 		}
@@ -427,7 +422,6 @@ as_prepare_load(struct addrspace *as)
 		}
 		current_region = current_region->next;
 	}
-	// TODO - check why these are is not zeroed by kmalloc?
 	while (i < as->num_regions) {
 		as->readonly_preparation[i] = NULL;
 		i++;
@@ -456,7 +450,6 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/* TODO double check this plz - Initial user-level stack pointer */
 	as_define_region(as, USERSTACK - USER_STACKPAGES * PAGE_SIZE, USER_STACKPAGES * PAGE_SIZE, 1, 1, 1);
 	*stackptr =  USERSTACK;
 

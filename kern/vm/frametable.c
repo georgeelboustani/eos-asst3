@@ -14,9 +14,9 @@
  */
 struct frame_table_entry {
 	// Map a physical address to a virtual address
-	struct addrspace* as; // TODO: George check? Don't need?
+	struct addrspace* as;
 	paddr_t paddr;
-	vaddr_t vaddr; // TODO: George check? Don't need?
+	vaddr_t vaddr;
 
 	// Indicate whether or not this frame is taken.
 	int free;
@@ -57,7 +57,6 @@ void initialize_frame_table(void) {
 	}
 }
 
-// TODO - optimise this, linked list of frees? to make it O(1) complexity
 paddr_t getppages(unsigned long npages) {
 	paddr_t nextfree;
 
@@ -72,7 +71,6 @@ paddr_t getppages(unsigned long npages) {
 		
 		lock_acquire(frame_table_lock);
 		int i = 0;
-		// TODO - check for max num frame pages, dont keep looking past this
 		while (frame_table[i].free != SET && i < total_num_frames) {
 			i++;
 		}
@@ -114,24 +112,15 @@ vaddr_t alloc_kpages(int npages)
 
 void free_kpages(vaddr_t addr)
 {
-	// Only good if this page is not mapped to user address space,
-	// if as != null we need to unmap the as and shootdown the TLB entry.
-	//lock_acquire(frame_table_lock);
 	int freed = UNSET;
 	int i = 0;
 	while (!freed && i < total_num_frames) {
-		// TODO - if as != NULL, unmap as and shootdown tlb entry
 		if (PADDR_TO_KVADDR(frame_table[i].paddr) == addr) {
-			if (frame_table[i].as != NULL) {
-				// TODO: Clean up the TLB as well. maybe outside this if statement
-			}
-			//bzero((void *)frame_table[i].vaddr, PAGE_SIZE);
 			frame_table[i].free = SET;
 			frame_table[i].fixed = UNSET;
 			freed = SET;
 		}
 		i++;
 	}
-	//lock_release(frame_table_lock);
 }
 
