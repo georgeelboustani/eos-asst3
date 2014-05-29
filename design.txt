@@ -1,0 +1,99 @@
+The purpose of this assignment is to implement the virtual memory
+system for os161. This involves the address translation mechanism
+for userland programs and the physical memory allocator for the
+operating system. The first and probably the most essential part
+of the assignment is to have a foolproof memory allocation system.
+That being said, our first task is to implement alloc_kpages() and
+free_kpages.
+
+In order to properly keep track of what frames have been allocated
+and which are free, we first needed to set up a frametable. Our
+frame table entries essentially tracked the physical address it
+represents, which address space the frame belongs to and whether
+or not it could be allocated based on if it is a free frame or if
+it is a fixed frame. Prior to our frametable being set up (on startup
+before vm_bootstrap()) we would simply delegate to ram_stealmem().
+Since we have a paradox where the frametable is required to allocate
+memory for usage but we needed to allocate the frametable itself,
+we manually allocated a section of memory for the frametable. We
+utilized ram_getsize() to work out precisely how many pages can be
+allocated based on the size of the remaining ram divided by page
+size (4096) and consequently the maximum size of the frametable.
+Then we set the first free paddr to be the next one after the last
+frame table entry and initialized all the available frames with
+incrementing (by page size) paddr.
+
+To handle allocation we simply find the next free frame (indicated
+by the free bit) and return the vaddr to this frame to the caller.
+We also make sure to lock around the frame table while the information
+is being modified to make sure no two processes can try allocate
+on the same frame simultaneously. Additionally we make a call to
+bzero with the vaddr after conversion (using PADDR_TO_KVADDR) to
+zero out the memory region. Freeing the allocated frames was straight
+forward, we simply iterate across the frametable and when we stumble
+across the desired address to free, we set the free bit to true and
+return. This allowed any new allocations to these frames to work
+even if there had been previous data stored in the frames.
+
+The next step after memory allocation is to handle memory translation
+between the userland memory to virtual memory. To facilitate this,
+each address space is given a page directory which is essentially
+a two level page table. Both layers had 1024 page entries which
+works out to 4 gigs of “memory” meaning the page table is able to
+translate up to 4gb of memory even if it is physically impossible
+to provide this much space. First the top level page table (page
+directory) is allocated as a 1024 index array and each slot was set
+to NULL. The second level of the page table had to be allocated
+dynamically (as to save space and setup time) and is therefore a
+linked list. A set of linked list helper functions are defined in
+addrspace.h and implemented in addrspace.c to facilitate easy
+insertion, creation, deletion and traversal of the link lists.
+
+Translating the virtual address to physical is a simple task, we
+simply took the first 10 bits as the first level index of the page
+directory and the second 10 bits as the second level index for the
+linked list. The last 12 bits were kept as an offset. By using these
+two indices we could either locate the specific page (implemented
+in page_walk(), addrspace.c) being asked for based on faultaddress
+given to vm_fault or if the page did not exist we could allocate a
+new page and cache it to the tlb.
+
+The first part of handling a vm_fault was to track regions in memory
+defined with permission information (readable, writeable, executable).
+We used another bookkeeping struct separate in each addrespace,
+seperate to the page_directory. In each region struct, we kept track
+of the base virtual address and number of pages that belonged to
+that region, along with the flags for that regions permissions. The
+regions were implemented as a linked list to facilitate dynamic
+creation and variable number of regions so that no assumptions were
+made about the number of regions a user program could have, which
+would have resulted in fragmentation.
+
+These regions were initialised in as_define_region and were altered
+in as_prepare_load to allow read only regions to be initialised and
+as_complete_load to be set back to the original permissions before
+passing back to the user. Defining a region simply created a new
+region in the address space and restricted the next npages of virtual
+memory to adhere to the permissions. In order to enforce these
+permissions they were checked during a vm_fault. The dirty bit of
+the TLB EntryLo was also set if and only if the page being written
+to cache is writeable. The stack definition was handled in a similar
+way, except an arbitrary 16 pages was allocated to the stack and
+the memory from USERSTACK - (16*PAGE_SIZE) was defined as a new
+region. This was done in the as_define_stack function, which simply
+called as_define_region with these parameters.
+
+Finally in vm_fault, after ensuring the fault_address is accessible
+with respect to the region permissions, and now that the page table
+entry has either been found or created, we added the faultaddress
+mapping to the physical address to the tlb. We used a clock hand
+method of tlb caching, which simply incremented a counter which
+indicated the next index to pass into tlb_write. This means we
+overwrite tlb entries in a first in first out order.
+
+To finish off we needed a way for parallel processes and future
+processes to run together and smoothly, in order to do so we had
+to implement vm_tlbshootdown_all() which would invalidate all of
+the cache on as_activate or as_destroy. This was simply replicating
+the behaviour of dumbvm, writing invalid addresses to every index
+of the tlb.
