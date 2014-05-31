@@ -38,6 +38,7 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include <synch.h>
 
 struct addrspace;
 struct vnode;
@@ -47,7 +48,7 @@ struct vnode;
  */
 struct proc {
 	char *p_name;			/* Name of this process */
-	struct spinlock p_lock;		/* Lock for this structure */
+	struct lock *p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
 	pid_t p_pid;			/* Process ID */
 
