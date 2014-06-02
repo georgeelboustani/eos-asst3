@@ -13,8 +13,6 @@
  * function and call it from vm_bootstrap
  */
 struct frame_table_entry {
-	// Map a physical address to a virtual address
-	struct addrspace* as;
 	int frame_id;
 };
 
