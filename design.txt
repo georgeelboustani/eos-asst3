@@ -1,102 +1,106 @@
-The purpose of this assignment is to implement the virtual memory system
-for os161. This involves the address translation mechanism for userland
-programs and the physical memory allocator for the operating system. The
-first and probably the most essential part of the assignment is to have
-a foolproof memory allocation system. That being said, our first task
-was to implement alloc_kpages() and free_kpages.
+The purpose of this assignment is to implement the virtual memory
+system for os161. This involves the address translation mechanism
+for userland programs and the physical memory allocator for the
+operating system. The first and probably the most essential part
+of the assignment is to have a foolproof memory allocation system.
+That being said, our first task was to implement alloc_kpages() and
+free_kpages.
 
 In order to properly keep track of what frames have been allocated
-and which are free, we first needed to set up a frametable and a free
-list. Our frame table entries essentially stores the frame id, in order to
-make it easy to obtain in the allocation and freeing functions. The frame
-table entries will later be used to store extra information regarding the
-state of individual frames, however this is was not yet needed, such as
-a reference count to implement shared pages and copy-on-write. The free
-list is simply a linked list whose nodes are implemented throughout the
-free pages. Each free page points to the next free page, giving O(1)
-allocation and freeing.
+and which are free, we first needed to set up a frametable and a
+free list. Our frame table entries essentially stores the frame id,
+in order to make it easy to obtain in the allocation and freeing
+functions. The frame table entries will later be used to store extra
+information regarding the state of individual frames, however this
+is was not yet needed, such as a reference count to implement shared
+pages and copy-on-write. The free list is simply a linked list whose
+nodes are implemented throughout the free pages. Each free page
+points to the next free page, giving O(1) allocation and freeing.
 
 Prior to our frametable being set up (on startup before vm_bootstrap())
-we would simply delegate to ram_stealmem(). Since we have a paradox where
-the frametable is required to allocate memory for usage but we needed
-to allocate the frametable itself, we manually allocated a section of
-memory for the frametable straight after the regions of memory allocated
-with ram_stealmem. We utilized ram_getsize() to work out precisely how
-many pages can be allocated and the maximum size of the frametable,
-and initialised the frame table entries. After this we initialised the
-free list, which is a linked list whose nodes are all the pages after
-the frametable.
+we would simply delegate to ram_stealmem(). Since we have a paradox
+where the frametable is required to allocate memory for usage but
+we needed to allocate the frametable itself, we manually allocated
+a section of memory for the frametable straight after the regions
+of memory allocated with ram_stealmem. We utilized ram_getsize()
+to work out precisely how many pages can be allocated and the maximum
+size of the frametable, and initialised the frame table entries.
+After this we initialised the free list, which is a linked list
+whose nodes are all the pages after the frametable.
 
 To handle allocation in getppages, we simply ‘pop’ the first node
 out of the free list, which is contained in our global first_free_frame
-variable, and point this variable to the next one pointed to by this
-frame. We return the paddr of this to the caller. We use a spinlock
-around the frame table and freelist access to prevent two processes
-allocation the same from of memory. Additionally we make a call to bzero
-with the vaddr after conversion (using PADDR_TO_KVADDR) to zero out the
-memory region.
+variable, and point this variable to the next one pointed to by
+this frame. We return the paddr of this to the caller. We use a
+spinlock around the frame table and freelist access to prevent two
+processes allocating the same frame of memory. Additionally we make
+a call to bzero with the vaddr after conversion (using PADDR_TO_KVADDR)
+to zero out the memory region.
 
 Freeing the allocated frames was was also straight forward, and was
-implemented in free_kpages. Essentially, this involved acquiring the
-same spinlock used in the getppages, and then converting the vaddr_t
-being passed into free_kpages into an index representative of the frame
-being freed. We ensure the index is greater then 0 and does not exceed
-the number of frames in memory, and then ‘push’ this newly free
-frame onto the freelist.
+implemented in free_kpages. Essentially, this involved acquiring
+the same spinlock used in the getppages, and then converting the
+vaddr_t being passed into free_kpages into an index representative
+of the frame being freed. We ensure the index is greater than 0 and
+does not exceed the number of frames in memory, and then ‘push’
+this newly free frame onto the freelist.
 
 The next step after memory allocation is to handle memory translation
 between the userland memory to virtual memory. To facilitate this,
-each address space is given a page directory which is essentially a two
-level page table. Both layers had 1024 page entries which works out to 4
-gigs of “memory”, meaning the page table is able to translate up to
-4gb of memory even if it is physically impossible to provide this much
-space. First the top level page table (page directory) is allocated as
-a 1024 index array and each slot was set to NULL. The second level of
-the page table had to be allocated dynamically (as to save space and
-setup time) and is therefore a linked list. A set of linked list helper
-functions are defined in addrspace.h and implemented in addrspace.c to
-facilitate easy insertion, creation, deletion and traversal of the link
-lists and page table structure.
+each address space is given a page directory which is essentially
+a two level page table. Both layers had 1024 page entries which
+works out to 4 gigs of “memory”, meaning the page table is able to
+translate up to 4gb of memory even if it is physically impossible
+to provide this much space. First the top level page table (page
+directory) is allocated as a 1024 index array and each slot was set
+to NULL. The second level of the page table had to be allocated
+dynamically (as to save space and setup time) and is therefore a
+linked list. A set of linked list helper functions are defined in
+addrspace.h and implemented in addrspace.c to facilitate easy
+insertion, creation, deletion and traversal of the link lists and
+page table structure.
 
-Translating the virtual address to physical memory is a simple task. We
-simply took the first 10 bits as the first level index of the page
-directory and the second 10 bits as the second level index for the linked
-list. The last 12 bits were kept as an offset. By using these two indices
-we could either locate the specific page (implemented in page_walk(),
-addrspace.c) being asked for based on faultaddress given to vm_fault,
-or, if the page did not exist we could allocate a new page and write it
-to the tlb.
+Translating the virtual address to physical memory is a simple task.
+We simply took the first 10 bits as the first level index of the
+page directory and the second 10 bits as the second level index for
+the linked list. The last 12 bits were kept as an offset. By using
+these two indices we could either locate the specific page (implemented
+in page_walk(), addrspace.c) being asked for based on faultaddress
+given to vm_fault, or, if the page did not exist we could allocate
+a new page and write it to the tlb.
 
 The first part of handling a vm_fault was to track regions in memory
-defined with permission information (readable, writeable, executable). We
-used region structs in each address space in order to keep track of the
-base virtual address and number of pages that belonged to the address
-spaces regions, along with the flags for that regions permissions. The
-regions were implemented as a linked list to facilitate dynamic creation
-and variable number of regions.
+defined with permission information (readable, writeable, executable).
+We used region structs in each address space in order to keep track
+of the base virtual address and number of pages that belonged to
+the address spaces regions, along with the flags for that regions
+permissions. The regions were implemented as a linked list to
+facilitate dynamic creation and variable number of regions.
 
 These regions were initialised in as_define_region and were altered
 in as_prepare_load to allow read only regions to be initialised and
 as_complete_load to set them back to the original permissions before
-passing execution back. Defining a region simply involved created a
-new region in the address space and restricting the next npages of
-virtual memory to adhere to the permissions. In order to enforce these
-permissions they were checked during a vm_fault. The dirty bit of the
-TLB EntryLo was also set if and only if the page being written to cache
-is writeable. The stack definition was handled in a similar way, except
-an arbitrary 16 pages was allocated to the stack and the memory from
-USERSTACK - (16*PAGE_SIZE) was defined as a new region. This was done
-in the as_define_stack function, which simply called as_define_region
-with these parameters.
+passing execution back. Defining a region simply involved created
+a new region in the address space and restricting the next npages
+of virtual memory to adhere to the permissions. In order to enforce
+these permissions they were checked during a vm_fault. The dirty
+bit of the TLB EntryLo was also set if and only if the page being
+written to cache is writeable. The stack definition was handled in
+a similar way, except an arbitrary 16 pages was allocated to the
+stack and the memory from USERSTACK - (16*PAGE_SIZE) was defined
+as a new region. This was done in the as_define_stack function,
+which simply called as_define_region with these parameters.
 
-Finally in vm_fault, after ensuring the fault_address is accessible with
-respect to the region permissions, and now that the page table entry has
-either been found or created, we added the faultaddress to the physical
-address mapping into the tlb. We used a clock hand method of tlb caching,
-which simply incremented a counter which indicated the next index to pass
-into tlb_write, and wraps around when it reaches the end. This means we
-overwrite tlb entries in a first in first out order.
+Finally in vm_fault, after ensuring the fault_address is accessible
+with respect to the region permissions, and now that the page table
+entry has either been found or created, we added the faultaddress
+to the physical address mapping into the tlb. We used a clock hand
+method of tlb caching, which simply incremented a counter which
+indicated the next index to pass into tlb_write, and wraps around
+when it reaches the end. This means we overwrite tlb entries in a
+first in first out order.
 
-To finish off we needed a way for parallel processes and future processes
-to run together. We achieved this by implementing vm_tlbshootdown_all(),
-which would invalidate all of the cache on as_activate and as_destroy.
+To finish off we needed a way for parallel processes and future
+processes to run together. We achieved this by implementing
+vm_tlbshootdown_all(), which would invalidate all of the cache on
+as_activate and as_destroy.
