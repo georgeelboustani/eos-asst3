@@ -393,6 +393,16 @@ thread_bootstrap(void)
 	wchanarray_init(&allwchans);
 
 	/* Done */
+        
+        /*
+	 * This is hacky, proc_bootstrap can't allocate the p_lock
+	 * prior to threads being initialised, so we do it here.
+	 */
+        KASSERT(curthread->t_proc->p_lock == (struct lock *) 0x12345678);
+        curthread->t_proc->p_lock = lock_create("p_lock");
+        if (curthread->t_proc->p_lock == NULL) {
+                panic("lock_create() failed in the early boostrap code");
+        }
 }
 
 /*

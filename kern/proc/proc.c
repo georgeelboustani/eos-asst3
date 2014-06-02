@@ -76,8 +76,14 @@ proc_create(const char *name)
 		return NULL;
 	}
 
+        proc->p_lock = lock_create("p_lock");
+        if (proc->p_lock == NULL) {
+                kfree(proc->p_name);
+                kfree(proc);
+                return NULL;
+        }
 	threadarray_init(&proc->p_threads);
-	spinlock_init(&proc->p_lock);
+
 	proc->p_pid = INVALID_PID;
 
 	/* VM fields */
@@ -176,8 +182,9 @@ proc_destroy(struct proc *proc)
 
 	KASSERT(proc->p_pid == INVALID_PID);
 	threadarray_cleanup(&proc->p_threads);
-	spinlock_cleanup(&proc->p_lock);
-
+	/* spinlock_cleanup(&proc->p_lock); */
+        
+        lock_destroy(proc->p_lock);
 	kfree(proc->p_name);
 	kfree(proc);
 }
@@ -188,11 +195,40 @@ proc_destroy(struct proc *proc)
 void
 proc_bootstrap(void)
 {
-	kproc = proc_create("[kernel]");
+        
+        /*
+	 * this is code clagged from proc_create to avoid lock
+	 * initilisation prior to threads being initialised
+	 */
+	kproc = kmalloc(sizeof(struct proc));
 	if (kproc == NULL) {
 		panic("proc_create for kproc failed\n");
 	}
+
+	kproc->p_name = kstrdup("[kernel]");
+	if (kproc->p_name == NULL) {
+		panic("proc_bootstrap kstrdup failed\n");
+	}
+
+        /*
+	 * this will get initilized in thread_bootstrap. So have
+	 * hacky sentinel in place for now.
+	 */
+        kproc->p_lock = (struct lock *) 0x12345678;
+        
+	threadarray_init(&kproc->p_threads);
+
+	/* spinlock_init(&proc->p_lock); */
 	kproc->p_pid = KERNEL_PID;
+
+
+	/* VM fields */
+	kproc->p_addrspace = NULL;
+
+	/* VFS fields */
+	kproc->p_cwd = NULL;
+	kproc->p_filetable = NULL;
+
 }
 
 /*
@@ -227,13 +263,13 @@ proc_create_runprogram(const char *name, struct proc **ret)
 
 	/* VFS fields */
 
-	spinlock_acquire(&curproc->p_lock);
+	lock_acquire(curproc->p_lock);
 	/* we don't need to lock proc->p_lock as we have the only reference */
 	if (curproc->p_cwd != NULL) {
 		VOP_INCREF(curproc->p_cwd);
 		proc->p_cwd = curproc->p_cwd;
 	}
-	spinlock_release(&curproc->p_lock);
+	lock_release(curproc->p_lock);
 
 	*ret = proc;
 	return 0;
@@ -304,13 +340,13 @@ proc_fork(struct proc **ret)
 		}
 	}
 
-	spinlock_acquire(&curproc->p_lock);
+	lock_acquire(curproc->p_lock);
 	/* we don't need to lock proc->p_lock as we have the only reference */
 	if (curproc->p_cwd != NULL) {
 		VOP_INCREF(curproc->p_cwd);
 		proc->p_cwd = curproc->p_cwd;
 	}
-	spinlock_release(&curproc->p_lock);
+	lock_release(curproc->p_lock);
 
 	*ret = proc;
 	return 0;
@@ -371,10 +407,23 @@ proc_addthread(struct proc *proc, struct thread *t)
 	int spl;
 
 	KASSERT(t->t_proc == NULL);
+        
+        /*
+	 * Tricky startup issue. This code gets called before the
+	 * thread subsystem is completely initialised. If p_lock is
+	 * 0x12345678, we assume we are in the single threaded bootup
+	 * phase and do not acquire any locks.
+	 */
 
-	spinlock_acquire(&proc->p_lock);
+        if (proc->p_lock != (struct lock *)0x12345678) {
+                lock_acquire(proc->p_lock);
+        } 
+                
 	result = threadarray_add(&proc->p_threads, t, NULL);
-	spinlock_release(&proc->p_lock);
+        
+        if (proc->p_lock != (struct lock *) 0x12345678) {
+                lock_release(proc->p_lock);
+        }
 	if (result) {
 		return result;
 	}
@@ -403,13 +452,13 @@ proc_remthread(struct thread *t)
 	proc = t->t_proc;
 	KASSERT(proc != NULL);
 
-	spinlock_acquire(&proc->p_lock);
+	lock_acquire(proc->p_lock);
 	/* ugh: find the thread in the array */
 	num = threadarray_num(&proc->p_threads);
 	for (i=0; i<num; i++) {
 		if (threadarray_get(&proc->p_threads, i) == t) {
 			threadarray_remove(&proc->p_threads, i);
-			spinlock_release(&proc->p_lock);
+			lock_release(proc->p_lock);
 			spl = splhigh();
 			t->t_proc = NULL;
 			splx(spl);
@@ -417,7 +466,7 @@ proc_remthread(struct thread *t)
 		}
 	}
 	/* Did not find it. */
-	spinlock_release(&proc->p_lock);
+	lock_release(proc->p_lock);
 	panic("Thread (%p) has escaped from its process (%p)\n", t, proc);
 }
 
@@ -439,9 +488,21 @@ proc_getas(void)
 		return NULL;
 	}
 
-	spinlock_acquire(&proc->p_lock);
+        /*
+	 * This routine is called in interrupt handlers, so can't use
+	 * a blocking lock here. 
+	 *
+	 * Can't use a spinlock for p_lock for now with existing
+	 * vfsbiglock structure, so we go lock-free for now and rely
+	 * on atomicity of read of address space pointer.
+	 *
+	 * If a lock is required here, you must also deal with the
+	 * vfsbiglock :-(
+	 */
+        
+	/* spinlock_acquire(&proc->p_lock); */
 	as = proc->p_addrspace;
-	spinlock_release(&proc->p_lock);
+	/* spinlock_release(&proc->p_lock); */
 	return as;
 }
 
@@ -457,9 +518,9 @@ proc_setas(struct addrspace *newas)
 
 	KASSERT(proc != NULL);
 
-	spinlock_acquire(&proc->p_lock);
+	lock_acquire(proc->p_lock);
 	oldas = proc->p_addrspace;
 	proc->p_addrspace = newas;
-	spinlock_release(&proc->p_lock);
+	lock_release(proc->p_lock);
 	return oldas;
 }
