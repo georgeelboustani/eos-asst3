@@ -15,13 +15,15 @@
 struct frame_table_entry {
 	// Map a physical address to a virtual address
 	struct addrspace* as;
-	paddr_t paddr;
-	vaddr_t vaddr;
 
 	// Indicate whether or not this frame is taken.
 	int free;
-	// Indicate if we can ever touch this frame after initializing it.
-	int fixed;
+	int frame_id;
+};
+
+struct free_list_node {
+	struct frame_table_entry* frame;
+	struct free_list_node* next;
 };
 
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
@@ -29,6 +31,7 @@ struct frame_table_entry* frame_table = UNSET;
 paddr_t free_addr;
 struct lock* frame_table_lock;
 int total_num_frames;
+struct free_list_node* first_free_frame = NULL;
 
 void initialize_frame_table(void) {
 	frame_table_lock = lock_create("frame_table_lock");
@@ -37,10 +40,15 @@ void initialize_frame_table(void) {
 	paddr_t paddr_high;
 	ram_getsize(&paddr_low, &paddr_high);
 
+	// Align the free_frame_table to the next page
+	paddr_low = paddr_low + (PAGE_SIZE - (paddr_low % PAGE_SIZE));
 	frame_table = (struct frame_table_entry*) PADDR_TO_KVADDR(paddr_low);
 
-	total_num_frames = (paddr_high - paddr_low) / PAGE_SIZE;
+	int kernel_allocated_frames = paddr_low / PAGE_SIZE;
+
+	total_num_frames = paddr_high / PAGE_SIZE;
 	int size_of_frame_table = total_num_frames * sizeof(struct frame_table_entry);
+	
 	free_addr = paddr_low + size_of_frame_table;
 	// Align to the next page frame
 	free_addr = free_addr + (PAGE_SIZE - (free_addr % PAGE_SIZE));
@@ -48,12 +56,34 @@ void initialize_frame_table(void) {
 	KASSERT((free_addr % PAGE_SIZE) == 0);
 	KASSERT((free_addr & PAGE_FRAME) == free_addr);
 
+	// How many frames the frame_table will take up
+	// TODO - this is page aligned ye?
+	int frame_table_frames_needed = (free_addr - paddr_low) / PAGE_SIZE;
+
 	int i = 0;
 	// Initialise the frame table, preferrably assign state values
-	for (i = 0; i < total_num_frames; i++) {
+	for (i = 0; i < kernel_allocated_frames + frame_table_frames_needed; i++) {
+		frame_table[i].free = UNSET;
+		frame_table[i].frame_id = i;
+	}
+
+	// Initialise the frame table, and free list
+	struct free_list_node* previous_free_list_node = NULL;
+	for (; i < total_num_frames; i++) {
 		frame_table[i].free = SET;
-		frame_table[i].fixed = UNSET;
-		frame_table[i].paddr = free_addr + i * PAGE_SIZE;
+		frame_table[i].frame_id = i;
+
+		struct free_list_node* current_free_frame = (struct free_list_node*)PADDR_TO_KVADDR(i * PAGE_SIZE);
+
+		if (previous_free_list_node == NULL) {
+			first_free_frame = current_free_frame;
+		} else {
+			previous_free_list_node->next = current_free_frame;
+		}
+
+		current_free_frame->frame = &frame_table[i];
+		current_free_frame->next = NULL;
+		previous_free_list_node = current_free_frame;
 	}
 }
 
@@ -69,22 +99,36 @@ paddr_t getppages(unsigned long npages) {
 			return 0;
 		}
 		
-		lock_acquire(frame_table_lock);
-		int i = 0;
-		while (frame_table[i].free != SET && i < total_num_frames) {
-			i++;
-		}
+		// lock_acquire(frame_table_lock);
+		// int i = 0;
+		// while (frame_table[i].free != SET && i < total_num_frames) {
+		// 	i++;
+		// }
 
-		if (i < total_num_frames) {
-			frame_table[i].free = UNSET;
-			frame_table[i].fixed = UNSET;
-			nextfree = frame_table[i].paddr;
-			lock_release(frame_table_lock);
-		} else {
-			// Out of memory
+		// if (i < total_num_frames) {
+		// 	frame_table[i].free = UNSET;
+		// 	nextfree = i * PAGE_SIZE;
+		// 	lock_release(frame_table_lock);
+		// } else {
+		// 	// Out of memory
+		// 	lock_release(frame_table_lock);
+		// 	return 0;
+		// }
+
+		lock_acquire(frame_table_lock);
+		
+		if (first_free_frame == NULL) {
 			lock_release(frame_table_lock);
 			return 0;
 		}
+
+		struct free_list_node* taken_free_node = first_free_frame;
+		taken_free_node->frame->free = UNSET;
+
+		nextfree = taken_free_node->frame->frame_id * PAGE_SIZE;
+
+		first_free_frame = first_free_frame->next;
+		lock_release(frame_table_lock);
 	}
 
 	bzero((void *)PADDR_TO_KVADDR(nextfree), PAGE_SIZE);
@@ -115,9 +159,16 @@ void free_kpages(vaddr_t addr)
 	int freed = UNSET;
 	int i = 0;
 	while (!freed && i < total_num_frames) {
-		if (PADDR_TO_KVADDR(frame_table[i].paddr) == addr) {
+		if (PADDR_TO_KVADDR(i * PAGE_SIZE) == addr) {
 			frame_table[i].free = SET;
-			frame_table[i].fixed = UNSET;
+
+			struct free_list_node* previous_free_node = first_free_frame;
+
+			first_free_frame = (struct free_list_node*)PADDR_TO_KVADDR(i * PAGE_SIZE);
+			// TODO - check this &
+			first_free_frame->frame = &frame_table[i];
+			first_free_frame->next = previous_free_node;
+
 			freed = SET;
 		}
 		i++;
