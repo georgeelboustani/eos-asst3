@@ -221,7 +221,9 @@ struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int crea
 	if (create_flag) {
 		paddr_t page_location = getppages(1);
 		// TODO - what do we do when we can't allocate anymore pages?
-		KASSERT(page_location != 0);
+		if (page_location == 0) {
+			return NULL;
+		}
 		KASSERT((page_location & PAGE_FRAME) == page_location);
 
 		struct page_table_entry* new_pte = create_page_table(page_location, 1, 1, second_index, offset);

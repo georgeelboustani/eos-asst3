@@ -324,9 +324,10 @@ int sys_sbrk(int increment, int *retval) {
 	KASSERT(cur_as->heap != NULL);
 
 	struct region* heap = cur_as->heap;
+	vaddr_t old_heap_end = cur_as->heap_end;
 
 	if (increment == 0) {
-		*retval =  heap->vbase;
+		*retval =  old_heap_end;
 		return 0;
 	}
 
@@ -335,23 +336,19 @@ int sys_sbrk(int increment, int *retval) {
 	// int remainder = increment % 4;
 	// increment += (4-remainder);
 
-	vaddr_t old_heap_end = cur_as->heap_end;
-	vaddr_t new_heap_end = cur_as->heap_end + increment;
+	vaddr_t new_heap_end = old_heap_end + increment;
 
 	vaddr_t page_aligned_end = new_heap_end + (PAGE_SIZE - (new_heap_end % PAGE_SIZE));
 
 	if (new_heap_end < heap->vbase || page_aligned_end >= USERSTACK - USER_STACKPAGES * PAGE_SIZE) {
-		// Too negative crossing into the previous region, or 
+		// Too negative crossing into the previous region, or 	
 		// Too high eating into the stack. We check the next page aligned, to be extra defensive
 		*retval = -1;
-		return ENOMEM;
+		return EINVAL;
 	} else {
 		cur_as->heap_end = new_heap_end;
-		vaddr_t heap_size = cur_as->heap_end - heap->vbase;
-		heap->npages = heap_size / PAGE_SIZE;
-		if (heap_size % PAGE_SIZE > 0) {
-			heap->npages++;
-		}
+		size_t heap_size = cur_as->heap_end - heap->vbase;
+		heap->npages = (heap_size / PAGE_SIZE) + 1;
 	}
 
 	*retval = old_heap_end;
