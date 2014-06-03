@@ -152,11 +152,9 @@ struct page_table_entry* add_page_table_entry(struct page_table_entry* head, str
 struct page_table_entry* deep_copy_page_table(struct page_table_entry* old) {
 	if (old != NULL) {
 		// Make new pagetable entry but same physical addres. then copy on vm_fault write
-		spinlock_acquire(old->spinner);
 
 		struct page_table_entry* new_pte = create_page_table(old->pbase, old->index, old->offset);
 		if (new_pte == NULL) {
-			spinlock_release(old->spinner);
 			return NULL;
 		}
 
@@ -167,8 +165,9 @@ struct page_table_entry* deep_copy_page_table(struct page_table_entry* old) {
 
 		kfree(new_pte->ref_count);
 		new_pte->ref_count = old->ref_count;
-		*(new_pte->ref_count) = *(new_pte->ref_count) + 1;
 
+		spinlock_acquire(old->spinner);
+		*(new_pte->ref_count) = *(new_pte->ref_count) + 1;
 		spinlock_release(old->spinner);
 
 		new_pte->next = deep_copy_page_table(old->next);
@@ -264,6 +263,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
+	// TODO - copy regions by reference not value
 	newas->first_region = deep_copy_region(old->first_region);
 	newas->num_regions = old->num_regions;
 
@@ -287,23 +287,18 @@ as_destroy(struct addrspace *as)
 			struct page_table_entry* pe = as->page_directory[i];
 			as->page_directory[i] = pe->next;
 
-			spinlock_acquire(pe->spinner);
-
 			if (*(pe->ref_count) == 0) {
-				spinlock_release(pe->spinner);
-
 				kfree((void*)PADDR_TO_KVADDR(pe->pbase));
-
+				kfree(pe->ref_count);
 				spinlock_cleanup(pe->spinner);
 				kfree(pe->spinner);
-
-				kfree(pe->ref_count);
-
-				kfree(pe);
 			} else {
+				spinlock_acquire(pe->spinner);
 				*(pe->ref_count) = *(pe->ref_count) - 1;
 				spinlock_release(pe->spinner);
 			}
+			
+			kfree(pe);
 		}
 		i++;
 	}
