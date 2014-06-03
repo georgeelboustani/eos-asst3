@@ -106,6 +106,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			paddr = getppages(1);
 			if (paddr == 0) {
+				spinlock_release(spin);
 				return ENOMEM;
 			}
 			KASSERT((paddr & PAGE_FRAME) == paddr);
