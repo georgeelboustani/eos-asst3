@@ -53,6 +53,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if (region == NULL) {
 		return EFAULT;
 	}
+
+	if (region == as->heap) {
+		if (faultaddress >= as->heap_end) {
+			return EFAULT;
+		}
+	}
+
 	uint32_t dirty_bit = TLBLO_DIRTY;
 	switch (faulttype) {
 		case VM_FAULT_READONLY:
