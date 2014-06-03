@@ -122,14 +122,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			*old_refcount = *old_refcount - 1;
 			write_tlb_entry(faultaddress, paddr, dirty_bit);
-		} else {
-			write_tlb_entry(faultaddress, paddr, dirty_bit);
+			spinlock_release(spin);
+			return 0;
 		}
-		
+
 		spinlock_release(spin);
-	} else {
-		write_tlb_entry(faultaddress, paddr, dirty_bit);
 	}
+	
+	write_tlb_entry(faultaddress, paddr, dirty_bit);
 
 	return 0;
 }

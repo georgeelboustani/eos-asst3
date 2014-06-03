@@ -156,6 +156,7 @@ struct page_table_entry* deep_copy_page_table(struct page_table_entry* old) {
 
 		struct page_table_entry* new_pte = create_page_table(old->pbase, old->index, old->offset);
 		if (new_pte == NULL) {
+			spinlock_release(old->spinner);
 			return NULL;
 		}
 
