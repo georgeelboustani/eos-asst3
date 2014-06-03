@@ -316,7 +316,7 @@ sys___getcwd(userptr_t buf, size_t buflen, int *retval)
 	return 0;
 }
 
-// TODO: Move this into its own file, cbf atm.
+// TODO: Move this into its own file
 int sys_sbrk(int increment, int *retval) {
 	struct addrspace* cur_as = curthread->t_proc->p_addrspace;
 

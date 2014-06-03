@@ -75,6 +75,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			if (!region->writeable) {
 				return EFAULT;
 			}
+
 			break;
 		default:
 			return EINVAL;
@@ -88,24 +89,53 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	KASSERT((faultaddress & PAGE_FRAME) == faultaddress);
 
 	struct page_table_entry* page = page_walk(faultaddress, as, 1);
-	if (page != NULL) {
-		// We found a page mapped to the vaddr.
-		paddr = page->pbase;
-		
-		KASSERT((paddr & PAGE_FRAME) == paddr);
-	} else {
+	if (page == NULL) {
 		return ENOMEM;
 	}
 
-	int spl = splhigh();
-	// If we got here then there's no more space in tlb. Knock one off
-	write_tlb_entry(faultaddress, paddr, dirty_bit);
-	splx(spl);
+	// We found a page mapped to the faultaddress.
+	paddr = page->pbase;
+	KASSERT((paddr & PAGE_FRAME) == paddr);
+
+	if (faulttype == VM_FAULT_WRITE) {
+		struct spinlock* spin = page->spinner;
+		spinlock_acquire(page->spinner);
+
+		if (*(page->ref_count) > 0) {
+			int* old_refcount = page->ref_count;
+
+			paddr = getppages(1);
+			if (paddr == 0) {
+				return ENOMEM;
+			}
+			KASSERT((paddr & PAGE_FRAME) == paddr);
+
+			memmove((void *)PADDR_TO_KVADDR(paddr), (const void *)PADDR_TO_KVADDR(page->pbase), PAGE_SIZE);
+			page->pbase = paddr;
+
+			page->ref_count = (int*)kmalloc(sizeof(int));
+			*(page->ref_count) = 0;
+
+			page->spinner = (struct spinlock*) kmalloc(sizeof(struct spinlock));
+			spinlock_init(page->spinner);
+
+			*old_refcount = *old_refcount - 1;
+			write_tlb_entry(faultaddress, paddr, dirty_bit);
+		} else {
+			write_tlb_entry(faultaddress, paddr, dirty_bit);
+		}
+		
+		spinlock_release(spin);
+	} else {
+		write_tlb_entry(faultaddress, paddr, dirty_bit);
+	}
 
 	return 0;
 }
 
 void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, uint32_t dirty_bit) {	
+	int spl = splhigh();
+
 	int index;
 	uint32_t ehi = faultaddress;
 	uint32_t elo = paddr | dirty_bit | TLBLO_VALID;
@@ -114,6 +144,7 @@ void write_tlb_entry(vaddr_t faultaddress, paddr_t paddr, uint32_t dirty_bit) {
 
 	DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 	tlb_write(ehi, elo, index);
+	splx(spl);
 }
 
 int clock_hand_tlb_knockoff(void) {

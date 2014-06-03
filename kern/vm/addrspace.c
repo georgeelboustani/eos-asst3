@@ -40,10 +40,6 @@
 #include <vm.h>
 #include <elf.h>
 
-#define OFFSET_MASK 0x00000fff
-#define FIRST_TABLE_INDEX_MASK 0xffc00000
-#define SECOND_TABLE_INDEX_MASK 0x003ff000
-
 /*
  * Region helper functions:
  */
@@ -119,14 +115,16 @@ struct region* retrieve_region(struct addrspace* as, vaddr_t faultaddress) {
 /*
  * Page table helper functions:
  */
-struct page_table_entry* create_page_table(paddr_t pbase, int is_dirty, int is_valid, int index, int offset) {
+struct page_table_entry* create_page_table(paddr_t pbase, int index, int offset) {
 	struct page_table_entry* new_pte = (struct page_table_entry*) kmalloc(sizeof(struct page_table_entry));
 	new_pte->pbase = pbase;
-	new_pte->is_dirty = is_dirty;
-	new_pte->is_valid = is_valid;
 	new_pte->index = index;
 	new_pte->offset = offset;
 	new_pte->next = NULL;
+	new_pte->ref_count = (int*)kmalloc(sizeof(int));
+	*(new_pte->ref_count) = 0;
+	new_pte->spinner = (struct spinlock*) kmalloc(sizeof(struct spinlock));
+	spinlock_init(new_pte->spinner);
 
 	return new_pte;
 }
@@ -153,53 +151,30 @@ struct page_table_entry* add_page_table_entry(struct page_table_entry* head, str
 
 struct page_table_entry* deep_copy_page_table(struct page_table_entry* old) {
 	if (old != NULL) {
-		paddr_t page_location = getppages(1);
-		KASSERT(page_location != 0);
-		KASSERT((page_location & PAGE_FRAME) == page_location);
+		// Make new pagetable entry but same physical addres. then copy on vm_fault write
+		spinlock_acquire(old->spinner);
 
-		struct page_table_entry* new_pte = create_page_table(page_location, old->is_dirty, old->is_valid, old->index, old->offset);
+		struct page_table_entry* new_pte = create_page_table(old->pbase, old->index, old->offset);
 		if (new_pte == NULL) {
 			return NULL;
 		}
 
-		memmove((void *)PADDR_TO_KVADDR(page_location), (const void *)PADDR_TO_KVADDR(old->pbase), PAGE_SIZE);
+		// Get the old page table entries spinlock and ref_count. They share until one needs to write
+		spinlock_cleanup(new_pte->spinner);
+		kfree(new_pte->spinner);
+		new_pte->spinner = old->spinner;
+
+		kfree(new_pte->ref_count);
+		new_pte->ref_count = old->ref_count;
+		*(new_pte->ref_count) = *(new_pte->ref_count) + 1;
+
+		spinlock_release(old->spinner);
 
 		new_pte->next = deep_copy_page_table(old->next);
 
 		return new_pte;
 	} else {
 		return NULL;
-	}
-}
-
-struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head, int index) {
-	if (head == NULL) {
-		return NULL;
-	} else {
-		struct page_table_entry* curr = head;
-		struct page_table_entry* prev = NULL;
-		int found = 0;
-		while (curr != NULL && (curr->index <= index)) {
-			if (curr->index == index) {
-				found = 1;
-				break;
-			}
-			prev = curr;
-			curr = curr->next;
-		}
-
-		if (!found) {
-			return head;
-		}
-
-		if (prev == NULL) {
-			struct page_table_entry* new_next = curr->next;
-			kfree(curr);
-			return new_next;
-		}
-		prev->next = curr->next;
-		kfree(curr);
-		return head;
 	}
 }
 
@@ -226,7 +201,7 @@ struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int crea
 		}
 		KASSERT((page_location & PAGE_FRAME) == page_location);
 
-		struct page_table_entry* new_pte = create_page_table(page_location, 1, 1, second_index, offset);
+		struct page_table_entry* new_pte = create_page_table(page_location, second_index, offset);
 		
 		KASSERT((new_pte->pbase & PAGE_FRAME) == new_pte->pbase);
 		as->page_directory[first_index] = add_page_table_entry(as->page_directory[first_index], new_pte);
@@ -310,8 +285,24 @@ as_destroy(struct addrspace *as)
 		while (as->page_directory[i] != NULL) {
 			struct page_table_entry* pe = as->page_directory[i];
 			as->page_directory[i] = pe->next;
-			kfree((void*)PADDR_TO_KVADDR(pe->pbase));
-			kfree(pe);
+
+			spinlock_acquire(pe->spinner);
+
+			if (*(pe->ref_count) == 0) {
+				spinlock_release(pe->spinner);
+
+				kfree((void*)PADDR_TO_KVADDR(pe->pbase));
+
+				spinlock_cleanup(pe->spinner);
+				kfree(pe->spinner);
+
+				kfree(pe->ref_count);
+
+				kfree(pe);
+			} else {
+				*(pe->ref_count) = *(pe->ref_count) - 1;
+				spinlock_release(pe->spinner);
+			}
 		}
 		i++;
 	}
@@ -465,6 +456,13 @@ as_complete_load(struct addrspace *as)
 	add_region(as, as->heap);
 	as->heap_end = heap_start;
 	as->num_regions++;
+
+	struct page_table_entry* page = page_walk(heap_start, as, 1);
+	if (page == NULL) {
+		return ENOMEM;
+	}
+	paddr_t paddr = page->pbase;
+	KASSERT((paddr & PAGE_FRAME) == paddr);
 
 	return 0;
 }

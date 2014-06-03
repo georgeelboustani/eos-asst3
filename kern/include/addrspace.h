@@ -43,6 +43,10 @@
 
 #define USER_STACKPAGES 16
 
+#define OFFSET_MASK 0x00000fff
+#define FIRST_TABLE_INDEX_MASK 0xffc00000
+#define SECOND_TABLE_INDEX_MASK 0x003ff000
+
 struct vnode;
 
 
@@ -55,11 +59,11 @@ struct vnode;
 
 struct page_table_entry {
 	paddr_t pbase;
-	int is_dirty;
-	int is_valid;
 	int index;
 	int offset;
 	struct page_table_entry* next;
+  int* ref_count;
+  struct spinlock* spinner;
 };
 
 struct region {
@@ -94,12 +98,12 @@ struct addrspace {
 /*
  * Page table helpers:
  */
-struct page_table_entry* create_page_table(paddr_t pbase, int is_dirty, int is_valid, int index, int offset);
+struct page_table_entry* create_page_table(paddr_t pbase, int index, int offset);
 struct page_table_entry* add_page_table_entry(struct page_table_entry* head, struct page_table_entry* new_page_table_entry);
 struct page_table_entry* deep_copy_page_table(struct page_table_entry* old);
-struct page_table_entry* destroy_page_table_entry(struct page_table_entry* head, int index);
 struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int create_flag);
 struct region* retrieve_region(struct addrspace* as, vaddr_t faultaddress);
+//void update_page_table_entry(struct addrspace* as, struct page_table_entry* new_pte, int first_index);
 
 
 /*
