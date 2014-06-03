@@ -48,6 +48,9 @@
 #include <file.h>
 #include <syscall.h>
 
+//TODO MOVE DIS SHIET YO
+#include <addrspace.h>
+
 /*
  * mk_useruio
  * sets up the uio for a USERSPACE transfer. 
@@ -311,4 +314,36 @@ sys___getcwd(userptr_t buf, size_t buflen, int *retval)
 	*retval = buflen - useruio.uio_resid;
 
 	return 0;
+}
+
+// TODO: Move this into its own file, cbf atm.
+void* sys_sbrk(int increment) {
+	struct addrspace* cur_as = curthread->t_proc->p_addrspace;
+	// Heap start not calculated yet.
+	if (cur_as != NULL && cur_as->heap_start == 0) {
+		struct region* cur_region = cur_as->first_region;
+		struct region* prev_region = cur_region;
+
+		while (cur_region != NULL) {
+			prev_region = cur_region;
+			cur_region = cur_region->next;
+		}
+
+		// Calculate heap start and store in addrspace.
+		vaddr_t heap_start = prev_region->vbase + prev_region->npages * PAGE_SIZE;
+		cur_as->heap_start = heap_start;
+		cur_as->heap_end = heap_start;
+	} else {
+		return (void*)-1;
+	}
+
+	// Align the increment by 4, increment heap if possible.
+	int remainder = increment % 4;
+	increment += (4-remainder);
+
+	if ((cur_as->heap_end + increment) >= cur_as->heap_start) {
+		cur_as->heap_end += increment;
+	}
+
+	return (void*) cur_as->heap_end;
 }

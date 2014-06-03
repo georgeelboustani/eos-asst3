@@ -271,6 +271,8 @@ as_create(void)
 
 	as->first_region = NULL;
 	as->num_regions = 0;
+	as->heap_start = 0;
+	as->heap_end = 0;
 
 	return as;
 }

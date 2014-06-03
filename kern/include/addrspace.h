@@ -84,6 +84,8 @@ struct addrspace {
         int num_regions;
         struct region* first_region;
         struct region** readonly_preparation;
+        vaddr_t heap_start;
+        vaddr_t heap_end;
 #endif
 };
 
