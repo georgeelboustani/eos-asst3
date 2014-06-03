@@ -41,6 +41,8 @@
 #define PAGE_TABLE_ONE_SIZE  1024
 #define PAGE_TABLE_TWO_SIZE  1024
 
+#define USER_STACKPAGES 16
+
 struct vnode;
 
 
@@ -84,7 +86,7 @@ struct addrspace {
         int num_regions;
         struct region* first_region;
         struct region** readonly_preparation;
-        vaddr_t heap_start;
+        struct region* heap;
         vaddr_t heap_end;
 #endif
 };

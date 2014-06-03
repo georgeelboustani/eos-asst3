@@ -88,6 +88,7 @@ paddr_t getppages(unsigned long npages) {
 		}
 
 		if (first_free_frame == NULL) {
+			// No more frames in the freelist, so we are out of memory
 			spinlock_release(&stealmem_lock);
 			return 0;
 		}

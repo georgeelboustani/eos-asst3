@@ -44,8 +44,6 @@
 #define FIRST_TABLE_INDEX_MASK 0xffc00000
 #define SECOND_TABLE_INDEX_MASK 0x003ff000
 
-#define USER_STACKPAGES 16
-
 /*
  * Region helper functions:
  */
@@ -222,6 +220,7 @@ struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int crea
 	// We didn't find an existing page entry
 	if (create_flag) {
 		paddr_t page_location = getppages(1);
+		// TODO - what do we do when we can't allocate anymore pages?
 		KASSERT(page_location != 0);
 		KASSERT((page_location & PAGE_FRAME) == page_location);
 
@@ -271,7 +270,7 @@ as_create(void)
 
 	as->first_region = NULL;
 	as->num_regions = 0;
-	as->heap_start = 0;
+	as->heap = NULL;
 	as->heap_end = 0;
 
 	return as;
@@ -446,6 +445,25 @@ as_complete_load(struct addrspace *as)
 	}
 
 	kfree(as->readonly_preparation);
+
+	// Get the end of the last region
+	vaddr_t heap_start = 0;
+	struct region* current_region = as->first_region;
+	while (current_region != NULL) {
+		// TODO - change this to be finding the max, not just last
+		heap_start = current_region->vbase + current_region->npages * PAGE_SIZE;
+		current_region = current_region->next;
+	}
+
+	KASSERT(heap_start != 0);
+	KASSERT((heap_start % PAGE_SIZE) == 0);
+	KASSERT((heap_start & PAGE_FRAME) == heap_start);
+
+	as->heap = create_region(heap_start, 1, 1, 1, 0);
+	add_region(as, as->heap);
+	as->heap_end = heap_start;
+	as->num_regions++;
+
 	return 0;
 }
 
@@ -453,6 +471,7 @@ int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
 	as_define_region(as, USERSTACK - USER_STACKPAGES * PAGE_SIZE, USER_STACKPAGES * PAGE_SIZE, 1, 1, 1);
+
 	*stackptr =  USERSTACK;
 
 	return 0;

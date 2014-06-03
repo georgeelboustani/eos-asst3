@@ -82,6 +82,6 @@ int sys_lseek(int fd, off_t offset, int code, off_t *retval);
 int sys_chdir(userptr_t path);
 int sys___getcwd(userptr_t buf, size_t buflen, int *retval);
 
-void* sys_sbrk(int increment);
+int sys_sbrk(int increment, int *retval);
 
 #endif /* _SYSCALL_H_ */

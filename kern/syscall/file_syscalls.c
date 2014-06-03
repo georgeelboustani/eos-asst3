@@ -317,33 +317,43 @@ sys___getcwd(userptr_t buf, size_t buflen, int *retval)
 }
 
 // TODO: Move this into its own file, cbf atm.
-void* sys_sbrk(int increment) {
+int sys_sbrk(int increment, int *retval) {
 	struct addrspace* cur_as = curthread->t_proc->p_addrspace;
-	// Heap start not calculated yet.
-	if (cur_as != NULL && cur_as->heap_start == 0) {
-		struct region* cur_region = cur_as->first_region;
-		struct region* prev_region = cur_region;
 
-		while (cur_region != NULL) {
-			prev_region = cur_region;
-			cur_region = cur_region->next;
-		}
+	KASSERT(cur_as != NULL);
+	KASSERT(cur_as->heap != NULL);
 
-		// Calculate heap start and store in addrspace.
-		vaddr_t heap_start = prev_region->vbase + prev_region->npages * PAGE_SIZE;
-		cur_as->heap_start = heap_start;
-		cur_as->heap_end = heap_start;
-	} else {
-		return (void*)-1;
+	struct region* heap = cur_as->heap;
+
+	if (increment == 0) {
+		*retval =  heap->vbase;
+		return 0;
 	}
 
+	// TODO - Abert what is this for?
 	// Align the increment by 4, increment heap if possible.
-	int remainder = increment % 4;
-	increment += (4-remainder);
+	// int remainder = increment % 4;
+	// increment += (4-remainder);
 
-	if ((cur_as->heap_end + increment) >= cur_as->heap_start) {
-		cur_as->heap_end += increment;
+	vaddr_t old_heap_end = cur_as->heap_end;
+	vaddr_t new_heap_end = cur_as->heap_end + increment;
+
+	vaddr_t page_aligned_end = new_heap_end + (PAGE_SIZE - (new_heap_end % PAGE_SIZE));
+
+	if (new_heap_end < heap->vbase || page_aligned_end >= USERSTACK - USER_STACKPAGES * PAGE_SIZE) {
+		// Too negative crossing into the previous region, or 
+		// Too high eating into the stack. We check the next page aligned, to be extra defensive
+		*retval = -1;
+		return ENOMEM;
+	} else {
+		cur_as->heap_end = new_heap_end;
+		vaddr_t heap_size = cur_as->heap_end - heap->vbase;
+		heap->npages = heap_size / PAGE_SIZE;
+		if (heap_size % PAGE_SIZE > 0) {
+			heap->npages++;
+		}
 	}
 
-	return (void*) cur_as->heap_end;
+	*retval = old_heap_end;
+	return 0;
 }
