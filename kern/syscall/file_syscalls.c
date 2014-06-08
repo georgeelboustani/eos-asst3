@@ -347,32 +347,30 @@ int sys_sbrk(int increment, int *retval) {
 		return EINVAL;
 	}
 
-	size_t old_num_pages = heap->npages;
 	size_t new_num_pages = ((new_heap_end - heap->vbase) / PAGE_SIZE) + 1;
-	int to_allocate = new_num_pages - old_num_pages;
 
-	if (to_allocate < 0) {
-		// TODO - do we free or wut
-	} else {
-		int i = 0;
-		while (i < to_allocate) {
-			vaddr_t page_start_address = old_heap_end + (PAGE_SIZE - (old_heap_end % PAGE_SIZE)) + i * PAGE_SIZE;
-			
-			KASSERT(page_start_address % PAGE_SIZE == 0);
-			KASSERT((page_start_address & PAGE_FRAME) == page_start_address);
-
-			struct page_table_entry* page = page_walk(page_start_address, cur_as, 1);
-			if (page == NULL) {
-				*retval = -1;
-				return ENOMEM;
-			}
-
-			paddr_t paddr = page->pbase;
-			KASSERT((paddr & PAGE_FRAME) == paddr);
-			
-			i++;
-		}
-	}
+//	if (to_allocate < 0) {
+//		// TODO - do we free or wut
+//	} else {
+//		int i = 0;
+//		while (i < to_allocate) {
+//			vaddr_t page_start_address = old_heap_end + (PAGE_SIZE - (old_heap_end % PAGE_SIZE)) + i * PAGE_SIZE;
+//
+//			KASSERT(page_start_address % PAGE_SIZE == 0);
+//			KASSERT((page_start_address & PAGE_FRAME) == page_start_address);
+//
+//			struct page_table_entry* page = page_walk(page_start_address, cur_as, 1);
+//			if (page == NULL) {
+//				*retval = -1;
+//				return ENOMEM;
+//			}
+//
+//			paddr_t paddr = page->pbase;
+//			KASSERT((paddr & PAGE_FRAME) == paddr);
+//
+//			i++;
+//		}
+//	}
 
 	cur_as->heap_end = new_heap_end;
 	heap->npages = new_num_pages;

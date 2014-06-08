@@ -127,13 +127,10 @@ sbrk’s job is quite simple from an outside perspective, all it has
 to do is increment or decrement the heap size depending on the given
 integer. The only check that is needed is that if the heap_end is
 decremented it will not fall beneath the address of where the heap
-begins. Since we’re dynamically allocating pages, there is a little
-bit more logic that needs to be handled. Basically if the heap_end
-extends over the page boundary, then we need to allocate another
-page and update heap_end. Since its possible that more than just a
-single page needs to be added we calculate the difference between
-the current number of pages and the projected number of new pages
-and allocate them. After we update the heap information and the
+begins. We also need to update how large the region is based on how
+far the heap_end is moved compared to heap start. Since the heap
+is basically another region, page allocation will be handled upon
+request in vm_fault. After we update the heap information and the
 heap end we simply return a pointer to the previous value of heap_end
 prior to incrementing. -1 is returned on error and 0 is returned
 on success. The final step is to simply tie up the syscall to the
