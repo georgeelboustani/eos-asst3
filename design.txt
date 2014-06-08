@@ -1,10 +1,10 @@
-The purpose of this assignment is to implement the virtual memory
-system for os161. This involves the address translation mechanism
-for userland programs and the physical memory allocator for the
-operating system. The first and probably the most essential part
-of the assignment is to have a foolproof memory allocation system.
-That being said, our first task was to implement alloc_kpages() and
-free_kpages.
+Basic design report: The purpose of this assignment is to implement
+the virtual memory system for os161. This involves the address
+translation mechanism for userland programs and the physical memory
+allocator for the operating system. The first and probably the most
+essential part of the assignment is to have a foolproof memory
+allocation system. That being said, our first task was to implement
+alloc_kpages() and free_kpages.
 
 In order to properly keep track of what frames have been allocated
 and which are free, we first needed to set up a frametable and a
@@ -104,3 +104,58 @@ To finish off we needed a way for parallel processes and future
 processes to run together. We achieved this by implementing
 vm_tlbshootdown_all(), which would invalidate all of the cache on
 as_activate and as_destroy.
+
+Advanced design report: For our advanced section we implemented
+sbrk(), which requires user heaps, and also implemented shared pages
+until a write occurs on the page.
+
+To handle the implementation of a user heap we first needed to
+define a new region just above the rest of the user regions (code,
+data etc), and below the stack, called the heap. We then added two
+new members to the addrspace struct, heap (which is a region pointer)
+and a vaddr_t heap_end. The heap tracks the heap region to save us
+some time from iterating through our region list each time and the
+heap_end tracks where exactly the heap has expanded to in memory.
+To first allocate the heap region we go to as_complete_load (which
+indicates the program has finished loading regions into memory) and
+allocate the heap manually just after the final user region, giving
+it one page to start with.
+
+The next step is to allow the user to make use of the heap which
+requires the implementation of sys_sbrk() located in file_syscalls.c.
+sbrk’s job is quite simple from an outside perspective, all it has
+to do is increment or decrement the heap size depending on the given
+integer. The only check that is needed is that if the heap_end is
+decremented it will not fall beneath the address of where the heap
+begins. Since we’re dynamically allocating pages, there is a little
+bit more logic that needs to be handled. Basically if the heap_end
+extends over the page boundary, then we need to allocate another
+page and update heap_end. Since its possible that more than just a
+single page needs to be added we calculate the difference between
+the current number of pages and the projected number of new pages
+and allocate them. After we update the heap information and the
+heap end we simply return a pointer to the previous value of heap_end
+prior to incrementing. -1 is returned on error and 0 is returned
+on success. The final step is to simply tie up the syscall to the
+user as in assignment 2. A case for sbrk is added to syscall.c.
+
+Implementing shared pages meant we needed to adjust how we performed
+a copy on the page table, notably on thread_fork(). Knowing this
+we need to modify as_copy to allocate a new page directory and new
+page table entries but we keep the same references to the physical
+addresses and other bookkeeping pointers until we need to write
+from vm_fault. Note that since the pointers are now shared each
+page table entry now has a spinlock to ensure threads do not conflict
+with one another when trying to operate on the page table entry.
+
+Now that we assume we can simply share all pages when reading, we
+need to handle the write case in vm_fault. To handle this safely
+we need to copy the contents of the page table entry that is being
+modified and allocate a new page to hold this information. This
+creates an identical copy but changes the references so that any
+updates on this thread will not affect the parent page. Also it is
+worth noting that this case is not needed to be handled when dealing
+with a singular thread running, therefore a ref_count is used to
+track if the page table entry has more than a single thread keeping
+a reference of it. If there is, only then we need to introduce the
+added complexity of copying and reallocating the page table entry.
