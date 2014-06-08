@@ -47,8 +47,6 @@
 #include <vnode.h>
 #include <file.h>
 #include <syscall.h>
-
-//TODO MOVE DIS SHIET YO
 #include <addrspace.h>
 
 /*
@@ -316,7 +314,6 @@ sys___getcwd(userptr_t buf, size_t buflen, int *retval)
 	return 0;
 }
 
-// TODO: Move this into its own file
 int sys_sbrk(int increment, int *retval) {
 	struct addrspace* cur_as = curthread->t_proc->p_addrspace;
 
@@ -331,15 +328,8 @@ int sys_sbrk(int increment, int *retval) {
 		return 0;
 	}
 
-	// TODO - Abert what is this for?
-	// Align the increment by 4, increment heap if possible.
-	// int remainder = increment % 4;
-	// increment += (4-remainder);
-
 	vaddr_t new_heap_end = old_heap_end + increment;
-
 	vaddr_t page_aligned_end = new_heap_end + (PAGE_SIZE - (new_heap_end % PAGE_SIZE));
-
 	if (new_heap_end < heap->vbase || page_aligned_end >= USERSTACK - USER_STACKPAGES * PAGE_SIZE) {
 		// Too negative crossing into the previous region, or 	
 		// Too high eating into the stack. We check the next page aligned, to be extra defensive
@@ -347,33 +337,8 @@ int sys_sbrk(int increment, int *retval) {
 		return EINVAL;
 	}
 
-	size_t new_num_pages = ((new_heap_end - heap->vbase) / PAGE_SIZE) + 1;
-
-//	if (to_allocate < 0) {
-//		// TODO - do we free or wut
-//	} else {
-//		int i = 0;
-//		while (i < to_allocate) {
-//			vaddr_t page_start_address = old_heap_end + (PAGE_SIZE - (old_heap_end % PAGE_SIZE)) + i * PAGE_SIZE;
-//
-//			KASSERT(page_start_address % PAGE_SIZE == 0);
-//			KASSERT((page_start_address & PAGE_FRAME) == page_start_address);
-//
-//			struct page_table_entry* page = page_walk(page_start_address, cur_as, 1);
-//			if (page == NULL) {
-//				*retval = -1;
-//				return ENOMEM;
-//			}
-//
-//			paddr_t paddr = page->pbase;
-//			KASSERT((paddr & PAGE_FRAME) == paddr);
-//
-//			i++;
-//		}
-//	}
-
 	cur_as->heap_end = new_heap_end;
-	heap->npages = new_num_pages;
+	heap->npages = ((new_heap_end - heap->vbase) / PAGE_SIZE) + 1;;
 
 	*retval = old_heap_end;
 	return 0;

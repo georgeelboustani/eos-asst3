@@ -195,7 +195,6 @@ struct page_table_entry* page_walk(vaddr_t vaddr, struct addrspace* as, int crea
 	// We didn't find an existing page entry
 	if (create_flag) {
 		paddr_t page_location = getppages(1);
-		// TODO - what do we do when we can't allocate anymore pages?
 		if (page_location == 0) {
 			return NULL;
 		}
@@ -263,7 +262,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
-	// TODO - copy regions by reference not value
 	newas->first_region = deep_copy_region(old->first_region);
 	newas->num_regions = old->num_regions;
 
@@ -439,7 +437,6 @@ as_complete_load(struct addrspace *as)
 	vaddr_t heap_start = 0;
 	struct region* current_region = as->first_region;
 	while (current_region != NULL) {
-		// TODO - change this to be finding the max, not just last
 		heap_start = current_region->vbase + current_region->npages * PAGE_SIZE;
 		current_region = current_region->next;
 	}
